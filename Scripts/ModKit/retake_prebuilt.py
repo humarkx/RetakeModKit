@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 
 
 PLUGINS = ('RetakeMapSDK', 'RetakeDestruction', 'RetakeMapContent')
@@ -13,6 +14,7 @@ MODULES = {
     'Plugins/RetakeDestruction/Binaries/Win64': ('RetakeDestruction', 'RetakeDestructionEditor'),
 }
 MANIFEST = 'ModKit/Prebuilt.json'
+TARGET_RECEIPT = 'Binaries/Win64/RetakeModKitEditor.target'
 
 
 def read(path):
@@ -48,8 +50,8 @@ def engine_identity(engine):
     return {'buildId': build_id, 'version': version}
 
 
-def allowed_files():
-    required, optional = set(), set()
+def allowed_files(format_version=2):
+    required, optional = ({TARGET_RECEIPT} if format_version >= 2 else set()), set()
     for directory, names in MODULES.items():
         required.add(directory + '/UnrealEditor.modules')
         required.update(directory + '/UnrealEditor-' + name + '.dll' for name in names)
@@ -57,10 +59,10 @@ def allowed_files():
     return required, optional
 
 
-def module_files(kit, build_id):
+def module_files(kit, build_id, format_version=2):
     """Only the five public modules, with UBT's original manifests; never rewrite BuildIds."""
     kit = Path(kit)
-    required, optional = allowed_files()
+    required, optional = allowed_files(format_version)
     for directory, names in MODULES.items():
         path = kit / directory / 'UnrealEditor.modules'
         if not path.is_file():
@@ -74,13 +76,28 @@ def module_files(kit, build_id):
     missing = sorted(relative for relative in required if not (kit / relative).is_file())
     if missing:
         raise ValueError('Mod Kit binaries are missing. Rerun Setup.ps1. Missing: ' + ', '.join(missing))
+    if format_version >= 2:
+        receipt = read(kit / TARGET_RECEIPT)
+        expected = {'TargetName': 'RetakeModKitEditor', 'TargetType': 'Editor', 'Platform': 'Win64',
+                    'Configuration': 'Development', 'Architecture': 'x64'}
+        if any(receipt.get(key) != value for key, value in expected.items()) or receipt.get('Version', {}).get('BuildId') != build_id:
+            raise ValueError('The editor target receipt does not match these Mod Kit binaries.')
+        if receipt.get('Project', '').replace('\\', '/') != '../../RetakeModKit.uproject':
+            raise ValueError('The editor target receipt must use the portable project-relative path.')
+        # Preserve the UBT receipt verbatim. It must not embed build-machine paths.
+        def portable(value):
+            if isinstance(value, dict): return all(portable(item) for item in value.values())
+            if isinstance(value, list): return all(portable(item) for item in value)
+            return not (isinstance(value, str) and re.match(r'^(?:[A-Za-z]:[\\/]|\\\\)', value))
+        if not portable(receipt):
+            raise ValueError('The editor target receipt contains an absolute machine path.')
     return sorted(required | {relative for relative in optional if (kit / relative).is_file()})
 
 
 def capture(kit, engine, source_content_hash):
     identity = engine_identity(engine)
     paths = module_files(kit, identity['buildId'])
-    return {'format': 1, 'platform': 'Win64', 'architecture': 'x64', 'configuration': 'Development',
+    return {'format': 2, 'platform': 'Win64', 'architecture': 'x64', 'configuration': 'Development',
             'engine': identity, 'sourceContentHash': source_content_hash,
             'inputs': native_inputs(kit), 'files': {relative: file_record(Path(kit) / relative) for relative in paths}}
 
@@ -89,17 +106,17 @@ def validate(kit):
     """Check a distributed binary payload and its native sources without requiring an engine."""
     kit = Path(kit)
     manifest = read(kit / MANIFEST)
-    if (manifest.get('format') != 1 or manifest.get('platform') != 'Win64'
+    if (manifest.get('format') not in (1, 2) or manifest.get('platform') != 'Win64'
             or manifest.get('architecture') != 'x64' or manifest.get('configuration') != 'Development'):
         raise ValueError('Unsupported prebuilt Mod Kit format.')
-    required, optional = allowed_files()
+    required, optional = allowed_files(manifest['format'])
     files = manifest.get('files', {})
     if not isinstance(files, dict) or not required <= set(files) <= required | optional:
         raise ValueError('Prebuilt payload must contain only the public editor modules and their manifests.')
     identity = manifest.get('engine', {})
     if not identity.get('buildId') or identity.get('version', {}).get('MajorVersion') != 6:
         raise ValueError('Prebuilt payload has no valid UE6 engine identity.')
-    paths = module_files(kit, identity['buildId'])
+    paths = module_files(kit, identity['buildId'], manifest['format'])
     if set(paths) != set(files) or any(file_record(kit / relative) != entry for relative, entry in files.items()):
         raise ValueError('Prebuilt binaries are missing or changed; restore the ZIP or rebuild from source.')
     if manifest.get('inputs') != native_inputs(kit):
@@ -112,6 +129,8 @@ def status(kit, engine):
         return {'usable': False, 'reason': 'This copy contains source only.'}
     try:
         manifest = validate(kit)
+        if manifest['format'] < 2:
+            return {'usable': False, 'reason': 'This older prebuilt kit lacks its editor target receipt. Update the kit or build from source.'}
         if manifest['engine'] != engine_identity(engine):
             return {'usable': False, 'reason': 'The bundled DLLs target a different engine build.'}
         return {'usable': True, 'reason': 'Bundled DLLs match the selected engine and kit source.'}

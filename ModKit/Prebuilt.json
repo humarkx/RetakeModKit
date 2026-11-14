@@ -15,8 +15,12 @@
     }
   },
   "files": {
+    "Binaries/Win64/RetakeModKitEditor.target": {
+      "sha256": "5b3ff99dce3292eec7faecba9b4631d9b8f437f406906e37554e29e355432451",
+      "size": 1188806
+    },
     "Binaries/Win64/UnrealEditor-RetakeModKit.dll": {
-      "sha256": "8f4eb15c0256a216b230b6a90c947b454222b216dccc678b8238d01f4136583e",
+      "sha256": "9f893b37fc9a67c7114bc4a53a89fd863dd092331063cdd5b56755ef0032d4a3",
       "size": 49152
     },
     "Binaries/Win64/UnrealEditor.modules": {
@@ -28,11 +32,11 @@
       "size": 222
     },
     "Plugins/RetakeDestruction/Binaries/Win64/UnrealEditor-RetakeDestruction.dll": {
-      "sha256": "3de7272458e9703c859a009d6b6efb542a564baef9b04a4ba131a47dfab326d2",
+      "sha256": "d88aa0c036533d1166126c71510191a595773fe856457c24d30f9437288827e4",
       "size": 790528
     },
     "Plugins/RetakeDestruction/Binaries/Win64/UnrealEditor-RetakeDestructionEditor.dll": {
-      "sha256": "e4f430b1a356dbd52d64e7df3fa15debbf7e895c8ffc9addd320debd2dc2daa5",
+      "sha256": "1eb6201a0caac5a3503485c6fb7172f3172281e75dbc0f5e5037a3593f177977",
       "size": 314880
     },
     "Plugins/RetakeDestruction/Binaries/Win64/UnrealEditor.modules": {
@@ -44,11 +48,11 @@
       "size": 1329
     },
     "Plugins/RetakeMapSDK/Binaries/Win64/UnrealEditor-RetakeMapSDK.dll": {
-      "sha256": "6cf4b7d0ebeeb04f7b128e0297479f7679da60357f094afe85c24d07b2b03e04",
-      "size": 2248192
+      "sha256": "e777558656408735f691feb75b06eaa2b92180cbca3d4cae13629b46349a31c0",
+      "size": 2248704
     },
     "Plugins/RetakeMapSDK/Binaries/Win64/UnrealEditor-RetakeMapSDKEditor.dll": {
-      "sha256": "cabd2a16da73e8e8796048421e137c8c0a2c568b821bad60b9f482848de310dd",
+      "sha256": "41a1af6b51117ede9b000915afb235bcf307bfb0b5df277bc0cc89e7c6938e7e",
       "size": 1918976
     },
     "Plugins/RetakeMapSDK/Binaries/Win64/UnrealEditor.modules": {
@@ -60,7 +64,7 @@
       "size": 6150
     }
   },
-  "format": 1,
+  "format": 2,
   "inputs": {
     "Plugins/RetakeDestruction/RetakeDestruction.uplugin": "458d4315351f870486eaed9f678b08ab25d3b9ce8cf1bbabf3b5737b671044af",
     "Plugins/RetakeDestruction/Source/RetakeDestruction/Private/RetakeDestructibleActor.cpp": "e3b3d041ba57a6f01f545c24f6488b847c012f5f27bc9d0f024313bbd2c2059e",
@@ -218,5 +222,5 @@
     "Source/RetakeModKitServer.Target.cs": "cb58551c85c95b4c5ae1fda078ba7e2c7ae3f276b96b6f66071d08092bf4fc72"
   },
   "platform": "Win64",
-  "sourceContentHash": "ffa5fe59b3e564ffb2091a33bb3865c53a936aa3e9f11039d80f2dd267ff889d"
+  "sourceContentHash": "1af37d86f0b6fbb22e42e2b322eba248bf2be3f4fd3a03c68c1bd5888c40786f"
 }

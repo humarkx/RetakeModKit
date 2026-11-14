@@ -42,3 +42,11 @@ Compatible game updates should continue accepting existing exports. Changes to n
 | Editor moved | Rerun Setup with the new engine path. |
 
 Logs are under `Saved/ModKit/Logs`. When reporting a problem, include the relevant diagnostic and setup information; omit credentials and personal paths where possible.
+
+## Local files and updates
+
+Opening the editor creates caches and logs under `Saved`, `Intermediate` and `DerivedDataCache`; these are already ignored. The kit also ignores your `Mods` workspaces, exports, recovery archives and local Python/IDE environments. Keep mod work in its own repository or backup.
+
+Ignore rules apply to untracked files. They do not hide edits to tracked `.uproject`, config, DLL or target-receipt files. Changing the engine association, enabling plugins, editing project settings or rebuilding native modules can therefore leave local changes that need review before pulling an update. Close the editor first so its loaded DLLs can be replaced.
+
+Unreal's Android File Server plugin generates local connection settings in `Config/DefaultEngine.ini` on first launch. Keep those generated settings local. If they are the only changes in that file, restoring the repository version before updating is safe; Unreal regenerates them on a later launch. Preserve any intentional config edits when merging an update. Do not ignore the entire Config folder or use a whole-workspace reset to clear one generated change.

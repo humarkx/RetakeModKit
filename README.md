@@ -38,3 +38,9 @@ Use the workspace's **Save**, **Check**, **Prepare** and **Export** controls. **
 Keep the Mod Kit and Retake up to date. Export checks SDK and game compatibility before cooking. Use your installed Retake game for gameplay testing; uploading and workshop integration are separate from the authoring workflow.
 
 [Compatibility & troubleshooting](Docs/Compatibility.md) · [License](LICENSE.txt) · [Third-party notices](Notices/ThirdParty.md)
+
+## Updating the kit
+
+Save your work and close the editor before pulling the current `main` branch. Your workspaces live under `Mods/`, which the kit repository ignores; keep each mod in its own repository or backup. Editor caches and logs are ignored too.
+
+Git may still report changes to tracked configuration, your local engine association, or binaries rebuilt for your engine. Review those changes before pulling instead of discarding the whole workspace. See [local files and updates](Docs/Compatibility.md#local-files-and-updates). After an SDK update, refresh authoring tools in the workspace and rebuild for your engine when required.

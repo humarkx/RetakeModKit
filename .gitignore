@@ -1,5 +1,6 @@
 # Published binaries listed in ModKit/Prebuilt.json are intentionally tracked.
 # Ignore any other local compiler outputs; publication stages only the listed files.
+# Ignore rules do not hide modifications to tracked project/config files or shipped binaries.
 /Binaries/
 /DerivedDataCache/
 /Intermediate/

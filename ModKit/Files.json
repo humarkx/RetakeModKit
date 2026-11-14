@@ -1,13 +1,13 @@
 {
-  "contentHash": "7424aab4a4ca5217f393f17a17ee8d58e8e6b8d5fd8661354ee00bd50f2e2535",
+  "contentHash": "63835466d839a1be0ee02202857b8579fa5d64cfa54ace0dfdd1bdddaa9a8458",
   "files": {
     ".gitattributes": {
       "sha256": "928941febe87f24440ad041f58032319feb8ebc23ae23ed3d9fa5125ce9e4561",
       "size": 304
     },
     ".gitignore": {
-      "sha256": "1e87a9077e438d977cefcfc0046f6f58c5e84d3d55960b470a4182b8685b2b64",
-      "size": 438
+      "sha256": "131a15b4817c202ce76ca5be721ebb60331bdf96086d13b41670772b2862e846",
+      "size": 532
     },
     "Binaries/Win64/RetakeModKitEditor.target": {
       "sha256": "5b3ff99dce3292eec7faecba9b4631d9b8f437f406906e37554e29e355432451",
@@ -33,6 +33,10 @@
       "sha256": "67bad7d83988cf4fc72fe2e9e944ec556e4575ba745f91d5efdbd3e7c95744bd",
       "size": 1705
     },
+    "Config/DefaultInput.ini": {
+      "sha256": "057cac3bcaee5ac375c8f34a31e632c0a0319c9a59763f44151028f594054536",
+      "size": 169
+    },
     "Config/DefaultScalability.ini": {
       "sha256": "3f8b55322e45617f4853807ff70f4909835127331369f8c4a25cb073243bd424",
       "size": 1688
@@ -42,8 +46,8 @@
       "size": 0
     },
     "Docs/Compatibility.md": {
-      "sha256": "33f0358ce5957cc777a0d37c381a8b1d01d545660fa39b52cb1bc35bf08de22c",
-      "size": 6339
+      "sha256": "58eaecc43f538a824a520154c8f21f58e27eed33284d2d399f5d1477b09674a8",
+      "size": 7475
     },
     "Docs/Content.md": {
       "sha256": "e04f2e2a8a9824af449ecf1e2835a52208549185dd5cc2ec9bad8eff5c67bc13",
@@ -126,7 +130,7 @@
       "size": 272
     },
     "ModKit/Prebuilt.json": {
-      "sha256": "17cf55ba3764743defb79dcbceec60a469cddb1d5ae10f6fafb89869679c3fab",
+      "sha256": "007634503f6882007997f0282614f5e12f7fa0f3daf3e10897389447e7c9d23c",
       "size": 25846
     },
     "ModKit/qualification.json": {
@@ -942,8 +946,8 @@
       "size": 1026
     },
     "README.md": {
-      "sha256": "2996f2cb4b3cb59da7b2dc7d18ff5fbaf5787eb2f9e72202ce95871157f78555",
-      "size": 2502
+      "sha256": "4324b43d6b9198bfe18d382555400d7224c3db1476af7e60814c973d6affcf82",
+      "size": 3145
     },
     "RetakeModKit.uproject": {
       "sha256": "c253465162d5484eba4f4e7ad4aa8a3e7a020afabfbc2bcd74e0d3b66b084b66",

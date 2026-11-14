@@ -1,5 +1,5 @@
 {
-  "contentHash": "7424aab4a4ca5217f393f17a17ee8d58e8e6b8d5fd8661354ee00bd50f2e2535",
+  "contentHash": "63835466d839a1be0ee02202857b8579fa5d64cfa54ace0dfdd1bdddaa9a8458",
   "delivery": "prebuilt-with-source",
   "engineBuildId": "4922e738-1986-422e-bf09-aed44c3e46a5",
   "format": 1,
@@ -18,7 +18,7 @@
     "distributionReview"
   ],
   "sdkContract": 62,
-  "sourceContentHash": "1af37d86f0b6fbb22e42e2b322eba248bf2be3f4fd3a03c68c1bd5888c40786f",
+  "sourceContentHash": "24141b0c5417cfa83795bd4fd9c7ee41868adea4221ff28bf0c1c9b08db0ea18",
   "status": "candidate",
   "version": "0.1.0-preview.7"
 }

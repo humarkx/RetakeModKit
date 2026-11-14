@@ -92,6 +92,11 @@ TArray<FString> FRetakeModMap::GetPresentationPackages() const
     return Packages;
 }
 
+FString FRetakeModMap::GetPreviewImagePath() const
+{
+    return TEXT("Previews/") + MapId + TEXT(".png");
+}
+
 bool FRetakeModManifest::Validate(FString& OutError) const
 {
     if (Format != TEXT("RetakeMap") && !IsWeaponPack())
@@ -152,6 +157,10 @@ bool FRetakeModManifest::Validate(FString& OutError) const
         if (!IsValidDisplayName(Map.DisplayName)) { OutError = FString::Printf(TEXT("map '%s' needs a safe display name"), *Map.MapId); return false; }
         if (!IsValidDescription(Map.Description)) { OutError = FString::Printf(TEXT("map '%s' has an unsafe description"), *Map.MapId); return false; }
         if (Map.Acoustics.IsEmpty()) { OutError = TEXT("gameplay maps require their current acoustic bake path"); return false; }
+        if (Map.PreviewImageHash.IsEmpty() ? Map.PreviewImageSize != 0 :
+            SdkContractVersion < 62 || Map.Preview.IsEmpty() || !FRetakeMapCompatibility::IsHash(Map.PreviewImageHash) ||
+            Map.PreviewImageSize <= 0 || Map.PreviewImageSize > FRetakeModMap::MaxPreviewImageBytes)
+        { OutError = FString::Printf(TEXT("map '%s' has invalid standalone preview metadata"), *Map.MapId); return false; }
         for (const FString* Path : { &Map.LoadingArt, &Map.Preview, &Map.Minimap, &Map.Ambience, &Map.Acoustics, &Map.VisibilityBake, &Map.DefaultLoadoutPolicy })
             if (!Path->IsEmpty() && !IsModObjectPath(*Path, Root))
                 { OutError = FString::Printf(TEXT("map '%s' presentation path '%s' is not an asset inside %s"), *Map.MapId, **Path, *Root); return false; }
@@ -261,6 +270,14 @@ bool FRetakeModManifest::LoadFromFile(const FString& Path, FRetakeModManifest& O
     for (const auto& Value : Object->GetArrayField(TEXT("maps")))
     {
         const auto Map = Value->AsObject();
+        if (Map->HasField(TEXT("previewImageHash")) && !Map->HasTypedField<EJson::String>(TEXT("previewImageHash")))
+        { OutError = TEXT("previewImageHash must be a string when present"); return false; }
+        double PreviewSize = 0;
+        if (Map->HasField(TEXT("previewImageSize")) && (!Map->HasTypedField<EJson::Number>(TEXT("previewImageSize"))
+            || !Map->TryGetNumberField(TEXT("previewImageSize"), PreviewSize)
+            || !FMath::IsFinite(PreviewSize) || PreviewSize < 0 || PreviewSize > FRetakeModMap::MaxPreviewImageBytes
+            || PreviewSize != FMath::FloorToDouble(PreviewSize)))
+        { OutError = TEXT("previewImageSize must be a bounded nonnegative integer when present"); return false; }
         if (const auto* Default = Map->Values.Find(TEXT("defaultLoadoutPolicy")); Default && (*Default)->Type != EJson::String)
         { OutError = TEXT("defaultLoadoutPolicy must be a string when present"); return false; }
         if (const auto* Modes = Map->Values.Find(TEXT("modeLoadoutPolicies")))
@@ -297,6 +314,8 @@ FString FRetakeModManifest::GetContentDigest() const
         FString Encoded(TEXT("map|"));
         for (const FString& Field : Fields) Encoded += FString::FromInt(Field.Len()) + TEXT(":") + Field;
         Lines.Add(MoveTemp(Encoded));
+        if (!Map.PreviewImageHash.IsEmpty())
+            Lines.Add(FString::Printf(TEXT("preview|%ls|%lld|%ls"), *Map.MapId, Map.PreviewImageSize, *Map.PreviewImageHash));
         // No new digest rows for absent fields: immutable contract-6 exports keep their original revision token.
         if (!Map.DefaultLoadoutPolicy.IsEmpty()) Lines.Add(TEXT("loadout|") + Map.MapId + TEXT("|default|") + Map.DefaultLoadoutPolicy);
         for (const auto& Pair : Map.ModeLoadoutPolicies) Lines.Add(TEXT("loadout|") + Map.MapId + TEXT("|") + Pair.Key + TEXT("|") + Pair.Value);

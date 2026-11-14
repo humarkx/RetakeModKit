@@ -3,6 +3,10 @@
 #include "RetakeMapSDKIds.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SplineComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "GameFramework/Actor.h"
 #include "Misc/DataValidation.h"
 
@@ -14,8 +18,58 @@ namespace
     constexpr float MaximumLedgeUpZ=.866f;
     /** The runtime boost rule: a boost ledge must be upright. */
     constexpr float MaximumBoostLedgeUpZ=.05f;
+    /** A mantle releases the capsule at the ledge line: the pawn collision under it may sit this far below (or above) it. */
+    constexpr float MaximumLedgeSurfaceGapCm=4.f;
+    /** How far under a ledge point the pawn collision is looked for before the ledge counts as floating. */
+    constexpr float LedgeSurfaceSearchCm=60.f;
+    /** MOHAA's MIN_WALK_NORMAL: a surface this steep under the ledge leaves the landed pawn in Falling. */
+    constexpr float MinimumWalkableNormalZ=.7f;
+    /** Samples along a ledge, including both ends. */
+    constexpr float LedgeSampleSpacingCm=25.f;
 
     FText AsText(FName Value) { return FText::AsCultureInvariant(Value.ToString()); }
+
+    /**
+     * The pawn collision under each sample of a ledge must meet the ledge line (within MaximumLedgeSurfaceGapCm) and be
+     * walkable, because the mantle releases the capsule on that line and the landing then runs the ordinary floor check.
+     * Component traces against simple collision are what pawn sweeps use; registered bodies are required.
+     */
+    void CheckLedgeSurface(const USplineComponent& Spline,const TArray<UPrimitiveComponent*>& Blocking,TArray<FText>& Errors)
+    {
+        if (Blocking.IsEmpty() || !Spline.IsRegistered()) return;
+        const float Length=Spline.GetSplineLength();
+        if (Length<=0.f) return;
+        const int32 Samples=FMath::Max(2,FMath::CeilToInt(Length/LedgeSampleSpacingCm)+1);
+        float WorstGap=0.f,WorstNormalZ=1.f;int32 Floating=0,Steep=0;
+        // Right after a level load, or in a world without a physics scene, the bodies are not there to trace; a floating
+        // verdict then would be false. Measure only when at least one blocking component has a live body.
+        bool bAnyBody=false;
+        for (const UPrimitiveComponent* Component:Blocking)
+            bAnyBody|=Component->GetBodyInstance() && Component->GetBodyInstance()->IsValidBodyInstance();
+        if (!bAnyBody) return;
+        FCollisionQueryParams Params(SCENE_QUERY_STAT(RetakeLedgeSurface),false);
+        for (int32 Sample=0;Sample<Samples;++Sample)
+        {
+            const FVector Point=Spline.GetLocationAtDistanceAlongSpline(Length*Sample/(Samples-1),ESplineCoordinateSpace::World);
+            const FVector Start=Point+FVector(0,0,MaximumLedgeSurfaceGapCm+1.f),End=Point-FVector(0,0,LedgeSurfaceSearchCm);
+            FHitResult Best;bool bHit=false;
+            for (UPrimitiveComponent* Component:Blocking)
+            {
+                FHitResult Hit;
+                if (Component->LineTraceComponent(Hit,Start,End,Params) && (!bHit || Hit.Distance<Best.Distance)) { Best=Hit;bHit=true; }
+            }
+            if (!bHit) { ++Floating;WorstGap=FMath::Max(WorstGap,LedgeSurfaceSearchCm);continue; }
+            const float Gap=Point.Z-Best.ImpactPoint.Z;
+            if (Gap>MaximumLedgeSurfaceGapCm) { ++Floating;WorstGap=FMath::Max(WorstGap,Gap); }
+            if (Best.ImpactNormal.Z<MinimumWalkableNormalZ) { ++Steep;WorstNormalZ=FMath::Min(WorstNormalZ,float(Best.ImpactNormal.Z)); }
+        }
+        if (Floating)
+            Errors.Add(FText::Format(NSLOCTEXT("RetakeMapSDK","LedgeFloating","Ledge {0} floats above the pawn collision at {1} of {2} samples (up to {3} cm). A mantle lands in the air and the pawn drops onto the real surface; put simple collision (a box) at the ledge height, or move the ledge onto the collision."),
+                AsText(Spline.GetFName()),FText::AsNumber(Floating),FText::AsNumber(Samples),FText::AsNumber(FMath::RoundToInt(WorstGap))));
+        if (Steep)
+            Errors.Add(FText::Format(NSLOCTEXT("RetakeMapSDK","LedgeSteep","The pawn collision under ledge {0} is steeper than walkable at {1} of {2} samples (normal Z {3}); a landed pawn stays in Falling and wedges. Give the prop a flat simple collision top."),
+                AsText(Spline.GetFName()),FText::AsNumber(Steep),FText::AsNumber(Samples),FText::AsNumber(WorstNormalZ)));
+    }
 }
 
 URetakeTraversalObstacleComponent::URetakeTraversalObstacleComponent()
@@ -151,6 +205,8 @@ void URetakeTraversalObstacleComponent::CollectIssues(TArray<FText>& Errors,TArr
     FBox Body(ForceInit);
     bool bBlocksPawn=false,bBlocksTraversable=false;
     GetCollisionForValidation(Body,bBlocksPawn,bBlocksTraversable);
+    TArray<UPrimitiveComponent*> Blocking;
+    GetRecoveryBlockingComponents(Blocking);
     TInlineComponentArray<USplineComponent*> Splines(GetLedgeOwner());
     if (Splines.IsEmpty()) Errors.Add(NSLOCTEXT("RetakeMapSDK","LedgeNoSplines","Add a spline component along each ledge: every spline on the actor is a ledge."));
     const auto IsSpline=[&Splines](FName Spline) { return Splines.ContainsByPredicate([Spline](const USplineComponent* S) { return S->GetFName()==Spline; }); };
@@ -187,7 +243,16 @@ void URetakeTraversalObstacleComponent::CollectIssues(TArray<FText>& Errors,TArr
             Errors.Add(FText::Format(NSLOCTEXT("RetakeMapSDK","LedgeBoostUpright","Boost ledge {0} must be upright: its up vector must be level (within 3 degrees)."),AsText(Ledge)));
         if (Spline->GetSplineLength()<MinimumWidth)
             Warnings.Add(FText::Format(NSLOCTEXT("RetakeMapSDK","LedgeShort","Ledge {0} is shorter than Minimum Width ({1} cm), so it cannot be used."),AsText(Ledge),FText::AsNumber(MinimumWidth)));
+        CheckLedgeSurface(*Spline,Blocking,Errors);
     }
+    // Complex-as-simple leaves the pawn on the raw triangle surface: ledges then sit on the bounding-box top while the
+    // landing is lumpy and partly unwalkable (obj_team4 bridge sandbags, 2026-11-08). Simple shapes make the top flat.
+    for (const UPrimitiveComponent* Primitive:Blocking)
+        if (const auto* Mesh=Cast<UStaticMeshComponent>(Primitive); Mesh && Mesh->GetStaticMesh())
+            if (const UBodySetup* Setup=Mesh->GetStaticMesh()->GetBodySetup();
+                Setup && (Setup->CollisionTraceFlag==CTF_UseComplexAsSimple || Setup->AggGeom.GetElementCount()==0))
+                Warnings.Add(FText::Format(NSLOCTEXT("RetakeMapSDK","LedgeComplexCollision","{0} has no simple collision (complex-as-simple). Give traversable props a box or convex hull at the ledge height with Use Simple and Complex, for example with RetakeMapSDKEditorLibrary.RepairTraversalCollision."),
+                    FText::AsCultureInvariant(Mesh->GetStaticMesh()->GetName())));
     if (!bBlocksPawn) Errors.Add(NSLOCTEXT("RetakeMapSDK","LedgePawnCollision","The actor needs collision that blocks Pawn."));
     if (bSolo && !bBlocksTraversable)
         Errors.Add(NSLOCTEXT("RetakeMapSDK","LedgeTraversable","Solo ledges need collision that blocks the Traversable channel (collision preset TraversalObjectPreset)."));

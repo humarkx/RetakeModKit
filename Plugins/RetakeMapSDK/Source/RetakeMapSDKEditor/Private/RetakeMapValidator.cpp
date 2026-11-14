@@ -324,7 +324,12 @@ namespace
     FString CheckTexture(const ARetakeMapSettings& Settings, const TSoftObjectPtr<UTexture2D>& Reference, const FString& ModRoot, int32 MaxSize,
         const TCHAR* Field, TArray<FRetakeMapIssue>& Out)
     {
-        if (Reference.IsNull()) return FString();
+        if (Reference.IsNull())
+        {
+            Add(Out, true, TEXT("Presentation"), &Settings,
+                FString::Printf(TEXT("Set %s on Retake Map Settings to a texture imported into this mod."), Field));
+            return FString();
+        }
         const FSoftObjectPath Path = Reference.ToSoftObjectPath();
         const UTexture2D* Texture = Path.GetLongPackageName().StartsWith(ModRoot) ? Reference.LoadSynchronous() : nullptr;
         if (!Texture) Add(Out, true, TEXT("Presentation"), &Settings, FString::Printf(TEXT("%s must be a texture inside %s."), Field, *ModRoot));

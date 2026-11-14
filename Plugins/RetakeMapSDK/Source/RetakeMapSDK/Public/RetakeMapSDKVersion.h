@@ -12,11 +12,11 @@
 namespace RetakeMapSDK
 {
     /** Element, link and manifest contract of the SDK classes that maps contain. */
-    inline constexpr int32 ContractVersion = 40; // Add independent base-game frag/smoke resource IDs; contract 39 remains readable.
+    inline constexpr int32 ContractVersion = 62; // Add optional standalone map previews to the manifest.
     /** Raise only when a reviewed breaking change makes older tagged maps unreadable or changes their meaning. */
-    inline constexpr int32 OldestReadableContract = 39; // Unpublished baseline: old minefields borrowed weapon resources that no longer exist.
+    inline constexpr int32 OldestReadableContract = 43; // Door reach replaces the serialized sphere subobject with a box.
     /** Weapon exports use the same fresh development baseline; prior experimental revisions require re-export. */
-    inline constexpr int32 MinimumWeaponContract = 39;
+    inline constexpr int32 MinimumWeaponContract = 43;
     /** Encoding of manifest.json. */
     inline constexpr int32 ManifestSchemaVersion = 3; // Fresh format; optional metadata additions do not bump this encoding.
     /**

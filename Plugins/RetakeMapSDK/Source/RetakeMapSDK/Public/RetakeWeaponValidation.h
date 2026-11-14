@@ -166,6 +166,9 @@ namespace RetakeWeaponValidation
         VALIDATE_PRESENTATION_REF(IdleAnimation); VALIDATE_PRESENTATION_REF(FireAnimation); VALIDATE_PRESENTATION_REF(ReloadAnimation);
         VALIDATE_PRESENTATION_REF(ReloadInsertAnimation); VALIDATE_PRESENTATION_REF(ReloadEndAnimation);
         VALIDATE_PRESENTATION_REF(FirstPersonReloadAnimation);
+        VALIDATE_PRESENTATION_REF(EmptyReloadAnimation);
+        VALIDATE_PRESENTATION_REF(FirstPersonEmptyReloadAnimation);
+        VALIDATE_PRESENTATION_REF(FirstPersonFirstEquipAnimation);
         VALIDATE_PRESENTATION_REF(FirstPersonBashAnimation); VALIDATE_PRESENTATION_REF(ThirdPersonBashAnimation);
         V.Require(P.BashVariants.Num()<=8,TEXT("BashVariants exceeds the recorded three-bit variant index."));
         for (const FRetakeBashAnimationVariant& Variant:P.BashVariants)
@@ -184,10 +187,13 @@ namespace RetakeWeaponValidation
             && P.BashProp.ThirdPersonOffset.IsValid()),TEXT("Bash prop requires a bone, valid offsets and an ordered visibility window in [0,1]."));
         VALIDATE_PRESENTATION_REF(FirstPersonReloadStart); VALIDATE_PRESENTATION_REF(FirstPersonReloadInsert); VALIDATE_PRESENTATION_REF(FirstPersonReloadEnd);
         VALIDATE_PRESENTATION_REF(ThirdPersonReloadStart); VALIDATE_PRESENTATION_REF(ThirdPersonReloadInsert); VALIDATE_PRESENTATION_REF(ThirdPersonReloadEnd);
-        VALIDATE_PRESENTATION_REF(ReloadInsertCue); VALIDATE_PRESENTATION_REF(ReloadEndCue); VALIDATE_PRESENTATION_REF(ShellEjectEffect); VALIDATE_PRESENTATION_REF(ShellEjectMesh);
-        VALIDATE_PRESENTATION_REF(PrimaryFireCue); VALIDATE_PRESENTATION_REF(SecondaryFireCue); VALIDATE_PRESENTATION_REF(DryFireCue);
+        VALIDATE_PRESENTATION_REF(ReloadInsertCue); VALIDATE_PRESENTATION_REF(ReloadEndCue); VALIDATE_PRESENTATION_REF(ShellEjectEffect);
+        VALIDATE_PRESENTATION_REF(FirstPersonShellEjectEffect); VALIDATE_PRESENTATION_REF(ShellEjectMesh);
+        VALIDATE_PRESENTATION_REF(PrimaryFireCue); VALIDATE_PRESENTATION_REF(OwnerPrimaryFireCue);
+        VALIDATE_PRESENTATION_REF(SecondaryFireCue); VALIDATE_PRESENTATION_REF(DryFireCue);
         VALIDATE_PRESENTATION_REF(FireSelectorCue);
         VALIDATE_PRESENTATION_REF(RechamberSound); VALIDATE_PRESENTATION_REF(RechamberAttenuation);
+        VALIDATE_PRESENTATION_REF(RechamberAnimation); VALIDATE_PRESENTATION_REF(AimedRechamberAnimation);
         if (!P.RechamberSound.IsNull())
         {
             V.Reference(P.FireAnimation.ToSoftObjectPath(), TEXT("Presentation.FireAnimation for rechamber sound"), true);

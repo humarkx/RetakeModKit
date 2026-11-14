@@ -163,7 +163,9 @@ def main():
     files = {relative: retake_prebuilt.file_record(kit / relative)
              for relative in retake_prebuilt.module_files(kit, identity['buildId'])}
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report | {'completed': True, 'engine': identity, 'inputs': inputs,
+    sdk = read(kit / 'SDK.lock.json')
+    output.write_text(json.dumps(report | {'completed': True, 'engine': identity,
+                                          'sdkSourceHash': sdk['sourceHash'], 'sdkContract': sdk['contractVersion'], 'inputs': inputs,
                                           'files': files}, indent=2) + '\n', encoding='utf-8')
     print('Setup completed. Run Open-ModKit.ps1 to open the authoring project.')
 

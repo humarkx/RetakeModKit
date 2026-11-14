@@ -19,6 +19,11 @@
 #include "Editor.h"
 #include "ScopedTransaction.h"
 #include "Animation/AnimSequence.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "RetakeTraversalObstacleComponent.h"
+#include "UObject/UObjectIterator.h"
 #include "Animation/AnimData/IAnimationDataModel.h"
 #include "Animation/AnimData/IAnimationDataController.h"
 #include "Misc/FrameRate.h"
@@ -37,6 +42,8 @@
 #include "RetakeWeaponPoseBasis.h"
 #include "RetakeWeaponPoseBaking.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/Texture2D.h"
+#include "EditorFramework/AssetImportData.h"
 #include "Animation/Skeleton.h"
 #include "ReferenceSkeleton.h"
 #include "SkeletalMeshAttributes.h"
@@ -44,6 +51,60 @@
 #include "RenderingThread.h"
 #include "AssetCompilingManager.h"
 #include "UObject/StrongObjectPtr.h"
+#include "RetakeMapValidator.h"
+
+bool URetakeMapSDKEditorLibrary::BuildMapPreviewMetadata(const UWorld& World, FRetakeModMap& OutMap, FString& OutError)
+{
+    OutMap = {};
+    OutError.Reset();
+    const FString Package = World.GetOutermost()->GetName();
+    const int32 RootEnd = Package.Find(TEXT("/"), ESearchCase::CaseSensitive, ESearchDir::FromStart, 1);
+    const FString Owner = RootEnd == INDEX_NONE ? FString() : Package.Mid(1, RootEnd - 1);
+    if (World.WorldType != EWorldType::Editor || !FRetakeModManifest::IsValidModId(Owner))
+    { OutError = TEXT("PIE map preview requires a source world in a RetakeMod_ content plugin."); return false; }
+    const auto Plugin = IPluginManager::Get().FindPlugin(Owner);
+    if (!Plugin || !Plugin->IsEnabled() || !Plugin->CanContainContent())
+    { OutError = TEXT("Enable the source map's content plugin before starting PIE: ") + Owner; return false; }
+    OutMap.PackageName = Package;
+    OutMap.MapId = Owner + TEXT(".") + FPackageName::GetShortName(Package);
+    for (const auto& Mode : RetakeMapSDK::ModeRequirements)
+    {
+        TArray<FRetakeMapIssue> Issues;
+        if (RetakeMapValidator::ValidateMode(World, Mode, Issues)) OutMap.SupportedModes.Add(Mode.ModeId);
+    }
+    if (OutMap.SupportedModes.IsEmpty())
+    { OutError = TEXT("The source map does not satisfy the starts/objectives of any supported mode."); return false; }
+    TArray<FRetakeMapIssue> Issues;
+    RetakeMapValidator::ValidatePresentation(World, TEXT("/") + Owner + TEXT("/"), OutMap, Issues);
+    TArray<FString> Errors;
+    for (const auto& Issue : Issues) if (Issue.bError) Errors.Add(Issue.Code + TEXT(": ") + Issue.Detail);
+    OutError = FString::Join(Errors, TEXT("\n"));
+    return Errors.IsEmpty();
+}
+
+FString URetakeMapSDKEditorLibrary::NormalizeTextureImportMetadata(UTexture2D* Texture, const FString& OwnerModId)
+{
+    if (!IsInGameThread() || !GEditor || GEditor->PlayWorld || !IsValid(Texture)
+        || !FRetakeModManifest::IsValidModId(OwnerModId)
+        || !URetakeWeaponPack::IsOwnedObjectPath(OwnerModId, FSoftObjectPath(Texture)))
+        return TEXT("Select a texture owned by the mod with PIE stopped.");
+    UAssetImportData* Previous = Texture->AssetImportData;
+    if (!Previous || Previous->GetClass() == UAssetImportData::StaticClass()) return FString();
+    if (!Previous->GetClass()->GetPathName().StartsWith(TEXT("/Script/Interchange")))
+        return TEXT("Only Interchange import metadata can be normalized by this operation.");
+    FAssetImportInfo Source = Previous->GetSourceData();
+    const FScopedTransaction Transaction(NSLOCTEXT("RetakeMapSDK", "NativeTextureImport", "Normalize Texture Import Metadata"));
+    Texture->Modify();
+    Previous->Modify();
+    const FName RetiredName = MakeUniqueObjectName(GetTransientPackage(), Previous->GetClass(), Previous->GetFName());
+    if (!Previous->Rename(*RetiredName.ToString(), GetTransientPackage(), REN_DontCreateRedirectors))
+        return TEXT("Could not detach the optional texture importer metadata.");
+    UAssetImportData* Replacement = NewObject<UAssetImportData>(Texture);
+    Replacement->SourceData = MoveTemp(Source);
+    Texture->AssetImportData = Replacement;
+    Texture->MarkPackageDirty();
+    return FString();
+}
 
 FString URetakeMapSDKEditorLibrary::GetWeaponAuthoringBodyIdentity(URetakeWeaponPoseBasis* Basis)
 {
@@ -211,6 +272,51 @@ FString AnimationFrameHash(const IAnimationDataModel& Model)
 }
 }
 
+FString URetakeMapSDKEditorLibrary::RepairTraversalCollision(AActor* Actor,const FString& OwnerModId)
+{
+    if (!IsInGameThread() || !Actor || (GEditor && GEditor->PlayWorld) || !FRetakeModManifest::IsValidModId(OwnerModId))
+        return TEXT("Select a placed actor and a valid owner mod id with PIE stopped.");
+    const auto* Obstacle=Actor->FindComponentByClass<URetakeTraversalObstacleComponent>();
+    if (!Obstacle) return TEXT("The actor has no Retake Traversal Obstacle component.");
+    FScopedTransaction Transaction(NSLOCTEXT("RetakeMapSDK","RepairTraversalCollision","Repair traversal collision"));
+    TArray<FString> Report;
+    TInlineComponentArray<UStaticMeshComponent*> Meshes(Actor);
+    for (UStaticMeshComponent* Component:Meshes)
+    {
+        UStaticMesh* Mesh=Component->GetStaticMesh();
+        if (!Mesh || !Component->IsQueryCollisionEnabled() || Component->GetCollisionResponseToChannel(ECC_Pawn)!=ECR_Block) continue;
+        if (!URetakeWeaponPack::IsOwnedObjectPath(OwnerModId,FSoftObjectPath(Mesh)))
+        { Report.Add(FString::Printf(TEXT("%s: not owned by %s, left unchanged"),*Mesh->GetName(),*OwnerModId));continue; }
+        UBodySetup* Body=Mesh->GetBodySetup();
+        if (!Body) { Mesh->CreateBodySetup();Body=Mesh->GetBodySetup(); }
+        if (!Body) { Report.Add(FString::Printf(TEXT("%s: no body setup"),*Mesh->GetName()));continue; }
+        const bool bHasSimple=Body->AggGeom.GetElementCount()>0;
+        if (bHasSimple && Body->CollisionTraceFlag!=CTF_UseComplexAsSimple)
+        { Report.Add(FString::Printf(TEXT("%s: already has simple collision"),*Mesh->GetName()));continue; }
+        Mesh->Modify();Body->Modify();
+        if (!bHasSimple)
+        {
+            // The ledge splines sit on the bounding-box top, so a box fitted to the bounds puts the landing on the ledge line.
+            const FBox Bounds=Mesh->GetBoundingBox();
+            FKBoxElem Box;Box.Center=Bounds.GetCenter();
+            const FVector Size=Bounds.GetSize();Box.X=Size.X;Box.Y=Size.Y;Box.Z=Size.Z;
+            Body->AggGeom.BoxElems.Add(Box);
+        }
+        Body->CollisionTraceFlag=CTF_UseSimpleAndComplex;
+        Body->InvalidatePhysicsData();Body->CreatePhysicsMeshes();
+        Mesh->MarkPackageDirty();
+        int32 Refreshed=0;
+        for (TObjectIterator<UStaticMeshComponent> It;It;++It)
+            if (It->GetStaticMesh()==Mesh && It->IsRegistered()) { It->RecreatePhysicsState();++Refreshed; }
+        Report.Add(FString::Printf(TEXT("%s: %s, Use Simple and Complex, %d placed components refreshed"),*Mesh->GetName(),
+            bHasSimple ? TEXT("kept its simple shapes"):TEXT("added a bounds box"),Refreshed));
+    }
+    if (Report.IsEmpty()) return TEXT("The actor has no pawn-blocking static mesh components.");
+    const FText Remaining=Obstacle->GetConfigurationError();
+    Report.Add(Remaining.IsEmpty() ? TEXT("obstacle: valid"):FString::Printf(TEXT("obstacle: %s"),*Remaining.ToString()));
+    return FString::Join(Report,TEXT("\n"));
+}
+
 FString URetakeMapSDKEditorLibrary::InspectAnimationFrames(UAnimSequence* Animation)
 {
     auto Report=MakeShared<FJsonObject>();
@@ -238,6 +344,16 @@ FString URetakeMapSDKEditorLibrary::InspectAnimationFrames(UAnimSequence* Animat
         Report->SetNumberField(TEXT("syncMarkers"),Animation->AuthoredSyncMarkers.Num());
     }
     FString Json;FJsonSerializer::Serialize(Report,TJsonWriterFactory<>::Create(&Json));return Json;
+}
+
+FString URetakeMapSDKEditorLibrary::FinishAnimationCompilation(UAnimSequence* Animation,const FString& OwnerModId)
+{
+    if (!IsInGameThread() || !IsValid(Animation) || (GEditor && GEditor->PlayWorld)
+        || !FRetakeModManifest::IsValidModId(OwnerModId)
+        || !URetakeWeaponPack::IsOwnedObjectPath(OwnerModId,FSoftObjectPath(Animation)))
+        return TEXT("Select a mod-owned animation on the editor game thread with PIE stopped.");
+    Animation->WaitOnExistingCompression();
+    return FString();
 }
 
 bool URetakeMapSDKEditorLibrary::RetimeAnimationFrames(UAnimSequence* Animation,const FString& OwnerModId,

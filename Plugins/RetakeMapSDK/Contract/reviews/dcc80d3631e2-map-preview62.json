@@ -1,0 +1,26 @@
+{
+  "additions": [
+    "/Script/RetakeMapSDK.RetakeModMap/property/PreviewImageHash/array",
+    "/Script/RetakeMapSDK.RetakeModMap/property/PreviewImageHash/default",
+    "/Script/RetakeMapSDK.RetakeModMap/property/PreviewImageHash/flags",
+    "/Script/RetakeMapSDK.RetakeModMap/property/PreviewImageHash/type",
+    "/Script/RetakeMapSDK.RetakeModMap/property/PreviewImageSize/array",
+    "/Script/RetakeMapSDK.RetakeModMap/property/PreviewImageSize/default",
+    "/Script/RetakeMapSDK.RetakeModMap/property/PreviewImageSize/flags",
+    "/Script/RetakeMapSDK.RetakeModMap/property/PreviewImageSize/type"
+  ],
+  "contractVersion": 62,
+  "evidence": [
+    "Native editor build and reflection capture succeeded.",
+    "Omitted preview fields keep their empty and zero defaults. Old exports keep their existing identity and root-file rules.",
+    "Each readable snapshot has the same retained differences it had with SDK 61. Its prior retired weapon-ID review still applies."
+  ],
+  "format": 1,
+  "oldestReadableContract": 43,
+  "pending": [
+    "Both-platform export, packaged compatibility and owner Call Vote acceptance."
+  ],
+  "previousSourceHash": "003d8beb34e43a8a38f302a99a44531afc9f743795ae42768084de88d985503a",
+  "retainedBreaks": [],
+  "sourceHash": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+}

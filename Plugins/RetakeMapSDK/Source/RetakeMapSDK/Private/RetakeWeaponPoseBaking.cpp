@@ -21,6 +21,7 @@
 namespace RetakeWeaponPoseBaking
 {
 void FContext::Read(const UObject* Source) { if (Source) Sources.Add(Source->GetOutermost()->GetFName()); }
+void FContext::ReadRuntime(const UObject* Source) { if (Source) { Read(Source); RuntimeSources.Add(Source->GetOutermost()->GetFName()); } }
 FSamplingScope::FSamplingScope(int32 ForceRaw)
 {
     check(IsInGameThread());
@@ -308,6 +309,37 @@ bool BakeTrack(FContext& Context, const UAnimMontage* Montage, const UAnimSequen
     return true;
 }
 
+bool BakeGrenadeBodyTracks(FContext& Context,TConstArrayView<FRetakeGrenadeBodyAnimation> Animations,
+    TArray<FRetakeHitRigGrenadeBodyTrack>& Out,int64& TransformCount,FString& Error)
+{
+    TArray<FRetakeHitRigGrenadeBodyTrack> Tracks;
+    int64 Total=TransformCount;
+    TSet<ERetakeGrenadeBodyPose> Poses;
+    for (const auto& Animation:Animations)
+    {
+        if (uint8(Animation.Pose)>=uint8(ERetakeGrenadeBodyPose::Count) || Poses.Contains(Animation.Pose))
+        {Error=TEXT("Invalid or duplicate grenade body pose.");return false;}
+        Poses.Add(Animation.Pose);
+        auto& Track=Tracks.AddDefaulted_GetRef();
+        Track.Pose=Animation.Pose;
+        const auto Bake=[&](const TSoftObjectPtr<UAnimSequence>& Source,FRetakeHitRigTrack& Result)
+        {
+            const UAnimSequence* Clip=Source.LoadSynchronous();
+            if (!Clip || !BakeTrack(Context,nullptr,Clip,Result,600.f) || !Result.IsSet()
+                || Result.MainLayer!=ERetakeHitRigLayer::Absolute)
+            {Error=TEXT("Grenade body pose needs a complete absolute sequence: ")+Source.ToString();return false;}
+            Result.bFullBody=IsFullBodyGrenadePose(Animation.Pose);
+            Total+=int64(Result.MainPoses.Num())+Result.GunInHand.Num();
+            if (Total>RetakeWeaponPoses::MaximumTransforms) {Error=TEXT("Prepared weapon exceeds the pose sample budget.");return false;}
+            return true;
+        };
+        if (!Bake(Animation.Long,Track.Long)
+            || (!Animation.Short.IsNull() && Animation.Short!=Animation.Long && !Bake(Animation.Short,Track.Short))) return false;
+    }
+    Tracks.Sort([](const auto& A,const auto& B){return uint8(A.Pose)<uint8(B.Pose);});
+    Out=MoveTemp(Tracks);TransformCount=Total;return true;
+}
+
 bool BakeHold(FContext& Context, const FPlayerAnims& Anims, const FRetakeThirdPersonAimPose& Aim, const UBlendSpace* StandLean,
     const UBlendSpace* CrouchLean, const UBlendSpace* StandMovingLean,const UBlendSpace* CrouchMovingLean,
     float LeanStrength, FName ProfileId, const FCompactPose* StandLower, const FCompactPose* CrouchLower,
@@ -327,6 +359,8 @@ bool BakeHold(FContext& Context, const FPlayerAnims& Anims, const FRetakeThirdPe
     Hold.CarrySequences = {Anims.IdleAnim.Get(), Anims.CrouchIdleAnim ? Anims.CrouchIdleAnim.Get() : Anims.IdleAnim.Get(),
         Anims.AimIdleAnim ? Anims.AimIdleAnim.Get() : Anims.IdleAnim.Get(),
         Anims.SprintAnim ? Anims.SprintAnim.Get() : Anims.IdleAnim.Get()};
+    // The hold keeps these as hard references and RetakeLocomotionDeformation samples them at runtime: identity, not just staleness.
+    for (const UAnimSequence* Clip : Hold.CarrySequences) Context.ReadRuntime(Clip);
     if (!ProfileId.IsNone()) for (const UAnimSequence* Clip : Hold.CarrySequences)
         if (!Clip || !Clip->Notifies.IsEmpty())
         { Error = FString::Printf(TEXT("%s carry source %s needs an explicit notify policy"), *ProfileId.ToString(), *GetNameSafe(Clip)); return false; }
@@ -540,25 +574,51 @@ bool BakeWeapon(const URetakeWeaponSpecification& Definition,const FInputs& Inpu
     FCompactPose Stand,Crouch;
     if (!SamplePose(Context,Inputs.StandLower,Stand) || !SamplePose(Context,Inputs.CrouchLower,Crouch))
     {Error=TEXT("Could not sample the shared lower-body basis.");return false;}
+    TArray<int32> Lower;Inputs.Body.GetLowerBodyBones(Lower);
+    const auto ApplySharedLowerBody=[&](FCompactPose& Pose,ERetakeHitRigPose Stance)
+    {
+        for (int32 I=0;I<Lower.Num();++I)
+        {
+            const int32 Bone=Lower[I];
+            const auto Index=Context.Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(Context.MeshIndices[Bone]));
+            const FTransform Expected=Inputs.Body.LowerBodyPoses[int32(Stance)*Lower.Num()+I].Get();
+            const FTransform& Sampled=Pose[Index];
+            // The authoring sequences store float32 animation keys. The output uses the exact
+            // shared body transform rather than carrying storage roundoff into the prepared hold.
+            if (!Sampled.GetTranslation().Equals(Expected.GetTranslation(),.001)
+                || !Sampled.GetRotation().Equals(Expected.GetRotation(),.00001)
+                || !Sampled.GetScale3D().Equals(Expected.GetScale3D(),.00001))
+            {
+                Error=TEXT("The shared lower-body authoring clip differs from the body contract at ")+Inputs.Body.Bones[Bone].Name.ToString();
+                return false;
+            }
+            Pose[Index]=Expected;
+        }
+        return true;
+    };
+    if (!ApplySharedLowerBody(Stand,ERetakeHitRigPose::Stand) || !ApplySharedLowerBody(Crouch,ERetakeHitRigPose::Crouch)) return false;
     FRetakeHitRigHold Candidate;
     if (!BakeHold(Context,Profile->ThirdPersonAnims,Profile->ThirdPersonAim,Inputs.StandLean,Inputs.CrouchLean,
         Inputs.StandMovingLean,Inputs.CrouchMovingLean,Inputs.LeanStrength,Profile->ProfileId,&Stand,&Crouch,Candidate,Error)) return false;
     Candidate.Tracks.SetNum(int32(ERetakeHitRigTrack::Count));Candidate.bContinuousReloadStages=Profile->bContinuousThirdPersonReloadStages;
     int64 TransformCount=Candidate.Poses.Num();
-    const auto Track=[&](ERetakeHitRigTrack Kind,const UAnimMontage* Montage,const UAnimSequence* Sequence,float Rate=120.f)
+    const auto BakeAction=[&](FRetakeHitRigTrack& Result,const UAnimMontage* Montage,const UAnimSequence* Sequence,float Rate)
     {
         if (!Montage && !Sequence) return true;
-        auto& Result=Candidate.Tracks[int32(Kind)];
         if (!BakeTrack(Context,Montage,Sequence,Result,Rate) || !Result.IsSet() || Result.bFullBody || Result.AdditiveLayer==ERetakeHitRigLayer::Absolute)
-        {Error=FString::Printf(TEXT("Unsupported or incomplete weapon action track %d for %s."),int32(Kind),*Profile->ProfileId.ToString());return false;}
+        {Error=FString::Printf(TEXT("Unsupported or incomplete weapon action %s for %s."),*GetNameSafe(Montage ? static_cast<const UObject*>(Montage):Sequence),*Profile->ProfileId.ToString());return false;}
         TransformCount+=int64(Result.MainPoses.Num())+Result.AdditivePoses.Num()+Result.AimingPoses.Num()+Result.GunInHand.Num();
         if (TransformCount>RetakeWeaponPoses::MaximumTransforms) {Error=TEXT("Prepared weapon exceeds the pose sample budget.");return false;}
         return true;
     };
+    const auto Track=[&](ERetakeHitRigTrack Kind,const UAnimMontage* Montage,const UAnimSequence* Sequence,float Rate=120.f)
+    { return BakeAction(Candidate.Tracks[int32(Kind)],Montage,Sequence,Rate); };
     const auto& M=Profile->ThirdPersonMontages;
     if (!Track(ERetakeHitRigTrack::Reload,M.ReloadMontage,nullptr) || !Track(ERetakeHitRigTrack::Equip,M.EquipMontage,nullptr)
         || !Track(ERetakeHitRigTrack::Holster,M.HolsterMontage,nullptr) || !Track(ERetakeHitRigTrack::Drop,M.DropMontage,nullptr)
         || !Track(ERetakeHitRigTrack::Inspect,M.InspectMontage,nullptr) || !Track(ERetakeHitRigTrack::BoltCycle,Profile->ThirdPersonBoltCycle,nullptr)) return false;
+    if (!BakeAction(Candidate.CrouchedReload,Profile->ThirdPersonCrouchedReload,nullptr,120.f)
+        || !BakeAction(Candidate.MovingCrouchedReload,Profile->ThirdPersonMovingCrouchedReload,nullptr,120.f)) return false;
     const auto Sequence=[&](const TSoftObjectPtr<UAnimSequence>& Source,ERetakeHitRigTrack Kind,float Rate=120.f,bool bReload=false)
     {
         if (Source.IsNull()) return true;
@@ -587,9 +647,11 @@ bool BakeWeapon(const URetakeWeaponSpecification& Definition,const FInputs& Inpu
         || !Sequence(P.ThirdPersonGrenade.PrepareLong,ERetakeHitRigTrack::GrenadePrepareLong,600.f)
         || !Sequence(P.ThirdPersonGrenade.PrepareShort,ERetakeHitRigTrack::GrenadePrepareShort,600.f)
         || !Sequence(P.ThirdPersonGrenade.ReleaseLong,ERetakeHitRigTrack::GrenadeReleaseLong,600.f)
-        || !Sequence(P.ThirdPersonGrenade.ReleaseShort,ERetakeHitRigTrack::GrenadeReleaseShort,600.f)) return false;
+        || !Sequence(P.ThirdPersonGrenade.ReleaseShort,ERetakeHitRigTrack::GrenadeReleaseShort,600.f)
+        || !BakeGrenadeBodyTracks(Context,P.ThirdPersonGrenadeBodyAnimations,Candidate.GrenadeBodyTracks,TransformCount,Error)) return false;
     Candidate.bClearance=P.Clearance.bEnabled;
     BakeHands(*Inputs.ReferenceMesh,Definition,Inputs.SupportSocket,Candidate);
+    Context.Read(P.WorldMesh.Get()); // BakeHands reads its sockets; a socket edit must stale the bake.
     if (Candidate.bClearance)
     {
         FClearanceSource StandOffset,CrouchOffset;
@@ -597,7 +659,6 @@ bool BakeWeapon(const URetakeWeaponSpecification& Definition,const FInputs& Inpu
             || !BakeClearance(Inputs.Body.Bones,StandOffset,Candidate,ERetakeHitRigPose::Stand,Candidate.ClearanceStand,Error)
             || !BakeClearance(Inputs.Body.Bones,CrouchOffset,Candidate,ERetakeHitRigPose::Crouch,Candidate.ClearanceCrouch,Error)) return false;
     }
-    TArray<int32> Lower;Inputs.Body.GetLowerBodyBones(Lower);
     for (int32 Pose=0;Pose<int32(ERetakeHitRigPose::Count);++Pose)
         for (int32 I=0;I<Lower.Num();++I)
         {

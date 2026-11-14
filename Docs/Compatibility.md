@@ -6,6 +6,12 @@ Open `RetakeModKit.uproject` directly, then use **Retake → Mod Kit Workspace**
 
 The GitHub kit includes five prebuilt editor/runtime DLLs and their original Unreal module manifests. They load when the engine build identity matches. The kit includes no Unreal Engine installation or Retake game executable.
 
+## Updating from SDK40
+
+The SDK62 kit targets the newer game contract, whose oldest readable SDK is 43. Existing SDK40 cooked exports need to be re-exported from their editable sources using the updated kit. Keep the original workspace and its recovery archive before upgrading. After updating the project and compiling for your engine if needed, use **Enable authoring tools** to refresh the SDK checks and engine records, then check and prepare the saved content before exporting a new revision.
+
+Use the kit with the matching game release named by its metadata. Development-candidate game bindings produce local test exports; they do not establish compatibility with the currently released game. SDK62 also supports standalone map-cover files for server browsers and Call Vote previews.
+
 ## Opening with another UE6 build
 
 If opening the project reports missing or incompatible modules, your engine needs its own compiled copy of the kit modules. With the Visual Studio C++ tools supported by that engine installed, use Unreal's rebuild prompt. If compilation fails, report the error and build log. The bundled DLLs cannot be made compatible by editing their `.modules` BuildId.

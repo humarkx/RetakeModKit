@@ -14,6 +14,15 @@ enum class ERetakeAudioCategory : uint8 { Gameplay, Ambience, Music, Interface, 
 UENUM(BlueprintType)
 enum class ERetakeAudioLoading : uint8 { Critical, Streamed };
 
+/** One point on a piecewise linear gain curve between full-gain radius and maximum range. */
+USTRUCT(BlueprintType)
+struct RETAKEMAPSDK_API FRetakeAudioFalloffPoint
+{
+    GENERATED_BODY()
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="0", ClampMax="1")) float DistanceFraction = 0.f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="0", ClampMax="1")) float Gain = 1.f;
+};
+
 USTRUCT(BlueprintType)
 struct RETAKEMAPSDK_API FRetakeAudioPropagationProfile
 {
@@ -22,6 +31,10 @@ struct RETAKEMAPSDK_API FRetakeAudioPropagationProfile
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="0", Units="cm")) float FullGainRadiusCm = 100.f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="1", ClampMax="4")) float FalloffExponent = 2.f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="0", ClampMax="1")) float ReverbSend = .08f;
+    /** Empty uses FalloffExponent. Authored points run from (0,1) to (1,0). */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeAudioFalloffPoint> FalloffPoints;
+    /** Scales obstruction in decibels and filter octaves. Lower values let loud cues carry through cover. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="0.1", ClampMax="4")) float ObstructionStrength = 1.f;
     float GainAtDistance(float PathDistanceCm) const;
     bool Validate(FString& Error) const;
 };

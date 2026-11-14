@@ -82,6 +82,18 @@ namespace
             Number(uint8(Value.bSupportHand));Transform(Value.SupportInHand);Number(uint8(Value.bConvergence));Transform(Value.GripInHand);
             Number(Value.BarrelInHand.X);Number(Value.BarrelInHand.Y);Number(Value.BarrelInHand.Z);
             Number(Value.ConvergenceDegrees);Number(Value.LeanElbowDownWeight);
+            if (Value.CrouchedReload.IsSet() || Value.MovingCrouchedReload.IsSet())
+            {
+                Text(TEXT("MagazineReloadPoses:1"));
+                Track(Value.CrouchedReload);Track(Value.MovingCrouchedReload);
+            }
+            if (!Value.GrenadeBodyTracks.IsEmpty())
+            {
+                Text(TEXT("GrenadeBodyTracks:1"));
+                Number(int32(Value.GrenadeBodyTracks.Num()));
+                for (const auto& Variant:Value.GrenadeBodyTracks)
+                {Number(uint8(Variant.Pose));Track(Variant.Long);Track(Variant.Short);}
+            }
         }
         FString Finish() const { return LexToString(Hash.Finalize()).ToLower(); }
     };
@@ -90,9 +102,9 @@ namespace
         const USkeleton* Skeleton=Animation.GetSkeleton();if (!Skeleton) return false;
         FString Error;return Body.MatchesAnimationSkeleton(*Skeleton,Error);
     }
-    bool ValidateTrack(const FRetakeHitRigTrack& Track,const FString& Owner,const FRetakeWeaponPoseContract& Body,int64& Total)
+    bool ValidateTrack(const FRetakeHitRigTrack& Track,const FString& Owner,const FRetakeWeaponPoseContract& Body,int64& Total,bool bFullBody=false)
     {
-        if (Track.bFullBody || Track.AdditiveLayer==ERetakeHitRigLayer::Absolute || !FMath::IsFinite(Track.Length) || Track.Length<0.f || Track.Length>RetakeWeaponPoses::MaximumTrackSeconds
+        if (Track.bFullBody!=bFullBody || Track.AdditiveLayer==ERetakeHitRigLayer::Absolute || !FMath::IsFinite(Track.Length) || Track.Length<0.f || Track.Length>RetakeWeaponPoses::MaximumTrackSeconds
             || !FMath::IsFinite(Track.SampleRate) || Track.SampleRate<1.f || Track.SampleRate>RetakeWeaponPoses::MaximumSampleRate
             || !FMath::IsFinite(Track.GunSampleRate) || Track.GunSampleRate<1.f || Track.GunSampleRate>RetakeWeaponPoses::MaximumSampleRate
             || !FMath::IsFinite(Track.RateScale) || Track.RateScale<=0.f
@@ -123,6 +135,16 @@ namespace
             if (!Track.GunInHand[I].IsValid() || !FMath::IsFinite(Track.GunWeight[I]) || Track.GunWeight[I]<0.f || Track.GunWeight[I]>1.f) return false;
         return true;
     }
+}
+
+const FRetakeHitRigTrack* FRetakeHitRigHold::GetGrenadeBodyTrack(ERetakeGrenadeBodyPose Pose,bool bShort) const
+{
+    if (const auto* Variant=GrenadeBodyTracks.FindByPredicate([Pose](const auto& Entry){return Entry.Pose==Pose;}))
+    {
+        const auto& Track=Variant->Get(bShort);
+        if (Track.IsSet()) return &Track;
+    }
+    return nullptr;
 }
 
 bool FRetakeHitRigArmClearance::IsValid() const
@@ -263,6 +285,27 @@ bool URetakeWeaponPoseContribution::ValidatePayload(const FString& ExpectedOwner
                 || !OwnedResource(Owner,Clip->GetSkeleton()) || !SkeletonMatches(*Clip,BodyContract) || !Clip->Notifies.IsEmpty())
                 return Fail(TEXT("unsupported, foreign or notifying carry sequence"));
         for (const auto& Track:Hold.Tracks) if (!ValidateTrack(Track,Owner,BodyContract,Total)) return Fail(TEXT("malformed, incompatible or foreign action track"));
+        if (!ValidateTrack(Hold.CrouchedReload,Owner,BodyContract,Total)
+            || !ValidateTrack(Hold.MovingCrouchedReload,Owner,BodyContract,Total))
+            return Fail(TEXT("malformed, incompatible or foreign magazine reload pose"));
+        int32 PreviousPose=-1;
+        for (const auto& Variant:Hold.GrenadeBodyTracks)
+        {
+            const int32 Pose=int32(Variant.Pose);
+            const bool bFullBody=IsFullBodyGrenadePose(Variant.Pose);
+            const auto ValidAbsolute=[](const FRetakeHitRigTrack& Track)
+            {
+                return Track.MainLayer==ERetakeHitRigLayer::Absolute && Track.AdditiveLayer==ERetakeHitRigLayer::None
+                    && Track.AimingLayer==ERetakeHitRigLayer::None && Track.SourceAnimation
+                    && Track.SourceAnimation->GetClass()==UAnimSequence::StaticClass();
+            };
+            if (Pose<=PreviousPose || Pose>=int32(ERetakeGrenadeBodyPose::Count)
+                || !ValidAbsolute(Variant.Long) || !ValidateTrack(Variant.Long,Owner,BodyContract,Total,bFullBody)
+                || (Variant.Short.SourceAnimation && !ValidAbsolute(Variant.Short))
+                || !ValidateTrack(Variant.Short,Owner,BodyContract,Total,bFullBody && Variant.Short.IsSet()))
+                return Fail(TEXT("malformed, incompatible or foreign grenade body track"));
+            PreviousPose=Pose;
+        }
         for (const auto& Track:Hold.AdditionalBashTracks)
             if (!Track.IsSet() || !ValidateTrack(Track,Owner,BodyContract,Total)) return Fail(TEXT("malformed alternate bash track"));
         for (const auto* Clearance:{&Hold.ClearanceStand,&Hold.ClearanceCrouch})
@@ -303,6 +346,9 @@ int64 URetakeWeaponPoseContribution::PreparedTransformCount() const
     {
         Count+=int64(Hold.Poses.Num())+Hold.ClearanceStand.Rotations.Num()+Hold.ClearanceCrouch.Rotations.Num();
         for (const auto& Track:Hold.Tracks) Count+=TrackCount(Track);
+        Count+=TrackCount(Hold.CrouchedReload)+TrackCount(Hold.MovingCrouchedReload);
+        for (const auto& Variant:Hold.GrenadeBodyTracks)
+            Count+=TrackCount(Variant.Long)+TrackCount(Variant.Short);
         for (const auto& Track:Hold.AdditionalBashTracks) Count+=TrackCount(Track);
     }
     return Count;
@@ -334,6 +380,9 @@ bool URetakeWeaponPoseContribution::ValidateSpecificationBindings(const URetakeW
         return true;
     };
     const auto& M=Profile->ThirdPersonMontages;
+    if (Hold->CrouchedReload.SourceAnimation.Get()!=Profile->ThirdPersonCrouchedReload.Get()
+        || Hold->MovingCrouchedReload.SourceAnimation.Get()!=Profile->ThirdPersonMovingCrouchedReload.Get())
+    {Error=TEXT("Prepared magazine reload poses differ from the selected profile: ")+Profile->ProfileId.ToString();return false;}
     if (!Check(ERetakeHitRigTrack::Reload,FSoftObjectPath(M.ReloadMontage))
         || !Check(ERetakeHitRigTrack::Equip,FSoftObjectPath(M.EquipMontage))
         || !Check(ERetakeHitRigTrack::Holster,FSoftObjectPath(M.HolsterMontage))
@@ -346,6 +395,17 @@ bool URetakeWeaponPoseContribution::ValidateSpecificationBindings(const URetakeW
     for (int32 I=1;I<P.BashVariants.Num();++I)
         if (FSoftObjectPath(Hold->AdditionalBashTracks[I-1].SourceAnimation)!=P.BashVariants[I].ThirdPersonAnimation.ToSoftObjectPath())
         {Error=TEXT("Prepared alternate bash source differs from the selected weapon.");return false;}
+    if (Hold->GrenadeBodyTracks.Num()!=P.ThirdPersonGrenadeBodyAnimations.Num())
+    {Error=TEXT("Prepared grenade body tracks differ from the selected weapon.");return false;}
+    for (const auto& Variant:P.ThirdPersonGrenadeBodyAnimations)
+    {
+        const auto* Long=Hold->GetGrenadeBodyTrack(Variant.Pose,false);
+        const auto* Short=Hold->GetGrenadeBodyTrack(Variant.Pose,true);
+        const auto& ShortSource=Variant.Short.IsNull() ? Variant.Long : Variant.Short;
+        if (!Long || !Short || FSoftObjectPath(Long->SourceAnimation)!=Variant.Long.ToSoftObjectPath()
+            || FSoftObjectPath(Short->SourceAnimation)!=ShortSource.ToSoftObjectPath())
+        {Error=TEXT("Prepared grenade body source differs from the selected weapon.");return false;}
+    }
     return Check(ERetakeHitRigTrack::ReloadStart,P.ThirdPersonReloadStart.ToSoftObjectPath())
         && Check(ERetakeHitRigTrack::ReloadInsert,P.ThirdPersonReloadInsert.ToSoftObjectPath())
         && Check(ERetakeHitRigTrack::ReloadEnd,P.ThirdPersonReloadEnd.ToSoftObjectPath())

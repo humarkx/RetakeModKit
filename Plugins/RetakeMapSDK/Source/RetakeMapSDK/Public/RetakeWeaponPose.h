@@ -134,6 +134,16 @@ struct RETAKEMAPSDK_API FRetakeHitRigArmClearance
     bool IsValid() const;
 };
 
+USTRUCT()
+struct RETAKEMAPSDK_API FRetakeHitRigGrenadeBodyTrack
+{
+    GENERATED_BODY()
+    UPROPERTY() ERetakeGrenadeBodyPose Pose=ERetakeGrenadeBodyPose::CrouchedPrepare;
+    UPROPERTY() FRetakeHitRigTrack Long;
+    UPROPERTY() FRetakeHitRigTrack Short;
+    const FRetakeHitRigTrack& Get(bool bShort) const { return bShort && Short.IsSet() ? Short : Long; }
+};
+
 /** Key poses for one hold (a weapon animation profile, or unarmed): bone-local transforms in catalogue order, pose-major. */
 USTRUCT()
 struct RETAKEMAPSDK_API FRetakeHitRigHold
@@ -147,6 +157,17 @@ struct RETAKEMAPSDK_API FRetakeHitRigHold
     UPROPERTY() TArray<TObjectPtr<UAnimSequence>> CarrySequences;
     /** ERetakeHitRigTrack order. */
     UPROPERTY() TArray<FRetakeHitRigTrack> Tracks;
+    UPROPERTY() FRetakeHitRigTrack CrouchedReload;
+    UPROPERTY() FRetakeHitRigTrack MovingCrouchedReload;
+    UPROPERTY() TArray<FRetakeHitRigGrenadeBodyTrack> GrenadeBodyTracks;
+    const FRetakeHitRigTrack* GetGrenadeBodyTrack(ERetakeGrenadeBodyPose Pose,bool bShort) const;
+    const FRetakeHitRigTrack* GetMagazineReload(ERetakeMagazineReloadPose Pose) const
+    {
+        if (Pose==ERetakeMagazineReloadPose::CrouchedMoving && MovingCrouchedReload.IsSet()) return &MovingCrouchedReload;
+        if (Pose==ERetakeMagazineReloadPose::CrouchedIdle && CrouchedReload.IsSet()) return &CrouchedReload;
+        const int32 Default=int32(ERetakeHitRigTrack::Reload);
+        return Tracks.IsValidIndex(Default) && Tracks[Default].IsSet() ? &Tracks[Default] : nullptr;
+    }
     UPROPERTY(VisibleAnywhere, Category="Retake|Animation") bool bContinuousReloadStages=false;
     /** Bash variants 1..7; variant zero remains Tracks[Bash] for the single-clip fallback. */
     UPROPERTY() TArray<FRetakeHitRigTrack> AdditionalBashTracks;

@@ -577,7 +577,7 @@ FString ARetakeDestructibleActor::DescribeState() const
         Active,Moving,ActiveMoving,Sleeping,BrokenOff,InternalParent,Released,Gone,(int32)NetDormancy);
 }
 
-void ARetakeDestructibleActor::ApplyDamageAt(const FRetakeDestructionHit& Hit,float Damage,float DamageFraction)
+float ARetakeDestructibleActor::ApplyDamageAt(const FRetakeDestructionHit& Hit,float Damage,float DamageFraction)
 {
     const auto* Response=Hit.FieldDefinition.IsValid() ? Hit.FieldDefinition.Get():Definition.Get();
     const bool bExplosion=Hit.Radius>0;
@@ -588,7 +588,7 @@ void ARetakeDestructibleActor::ApplyDamageAt(const FRetakeDestructionHit& Hit,fl
             *GetName(),*GetNameSafe(Definition),*Hit.Point.ToCompactString(),Damage,Hit.Radius,Response ? Response->PointRadiusCm:0.f,
             Response && !Response->bUseAuthoredResponse ? Damage*Response->StrainPerDamage:0.f,DamageFraction,Hit.bDirectImpact,Hit.bDebrisImpact,Hit.BreakRadius,
             !(GetNetMode()==NM_Client || !bConfigured || bCleared || !Geometry->HasValidPhysicsState()),*DescribeState());
-    if (GetNetMode()==NM_Client || !HasAuthority() || !bConfigured || bCleared || !Response || !Geometry->HasValidPhysicsState()) return;
+    if (GetNetMode()==NM_Client || !HasAuthority() || !bConfigured || bCleared || !Response || !Geometry->HasValidPhysicsState()) return 0.f;
     TRACE_CPUPROFILER_EVENT_SCOPE(RetakeDestruction_ApplyStrain);
     bHitSinceSpawn=true;
     FlushNetDormancy();SetNetDormancy(DORM_Awake);
@@ -614,6 +614,7 @@ void ARetakeDestructibleActor::ApplyDamageAt(const FRetakeDestructionHit& Hit,fl
             RetakeDestructionPresentation::Impact|(Hit.bDebrisImpact ? RetakeDestructionPresentation::DebrisImpact:0));
     }
     GetWorldTimerManager().SetTimer(SettleTimer,this,&ThisClass::RefreshReleased,.05f,true);
+    return Damage;
 }
 void ARetakeDestructibleActor::HandleBreak(const FChaosBreakEvent& Event)
 {

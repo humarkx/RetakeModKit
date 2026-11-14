@@ -45,11 +45,16 @@ public:
     /** Zero for stack-based consumable grenades. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Ammo", meta=(ClampMin="0")) int32 MagazineCapacity = 0;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Actions") FRetakeWeaponReloadSettings Reload;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Actions") FRetakeWeaponRechamberSettings Rechamber;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") FRetakeWeaponReloadAudio ReloadAudio;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeWeaponTimedAudioCue> RechamberWorldAudio;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeWeaponTimedAudioCue> RechamberOwnerAudio;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Actions") FRetakeWeaponEquipSettings Equip;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Actions") FRetakeWeaponPutAwaySettings Holster;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Actions") FRetakeWeaponPutAwaySettings Drop;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Recoil") FRetakeWeaponViewKickSettings ViewKick;
+    /** Optional viewmodel recoil. Server weapon overrides apply after this authored default. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Recoil") FRetakeWeaponGunKickSettings GunKick;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Projectile") FRetakeWeaponProjectileSettings Projectile;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Grenades") FRetakeGrenadeRules Grenade;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Presentation") FRetakeWeaponPresentationSettings Presentation;

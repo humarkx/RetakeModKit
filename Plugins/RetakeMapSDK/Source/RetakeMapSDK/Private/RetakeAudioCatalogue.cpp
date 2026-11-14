@@ -73,7 +73,9 @@ bool RetakeAudioCatalogues::Build(const URetakeAudioLibrary& Base,TConstArrayVie
     Bindings.Sort([](const auto& A,const auto& B){return A.Id<B.Id;});
     TArray<uint8> Bytes; FMemoryWriter Writer(Bytes,true);
     const auto Name=[&](FString Value){Value=Value.ToLower();Writer<<Value;};
-    uint32 Format=2; Writer<<Format; // Recording-specific linear gain/pitch ranges participate in session identity.
+    // Hearing rules, including cue-specific obstruction response, participate in admission identity.
+    uint32 Format=4;
+    Writer<<Format;
     int32 Revision=Base.Revision; Writer<<Revision;
     int32 ProviderCount=Sorted.Num(),BindingCount=Bindings.Num();Writer<<ProviderCount<<BindingCount;
     // Include empty providers too: changing an enabled revision must not preserve a session identity accidentally.
@@ -87,6 +89,11 @@ bool RetakeAudioCatalogues::Build(const URetakeAudioLibrary& Base,TConstArrayVie
         Writer<<Category<<Loading<<Flags;
         auto Propagation=Cue.Propagation;
         Writer<<Propagation.RangeCm<<Propagation.FullGainRadiusCm<<Propagation.FalloffExponent<<Propagation.ReverbSend;
+        {
+            int32 PointCount=Propagation.FalloffPoints.Num(); Writer<<PointCount;
+            for (auto& Point:Propagation.FalloffPoints) Writer<<Point.DistanceFraction<<Point.Gain;
+        }
+        Writer<<Propagation.ObstructionStrength;
         float Priority=Cue.Priority,Gain=Cue.GainDb,Pitch=Cue.PitchVariationSemitones; int32 Maximum=Cue.MaximumInstances;
         Writer<<Priority<<Gain<<Pitch<<Maximum; Name(Cue.Generator.ToSoftObjectPath().ToString());
         int32 Count=Cue.Recordings.Num();Writer<<Count;

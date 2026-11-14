@@ -14,6 +14,13 @@ FPrimaryAssetId URetakeWeaponAnimationProfile::GetPrimaryAssetId() const
     return ProfileId.IsNone() ? FPrimaryAssetId() : FPrimaryAssetId(TEXT("RetakeWeaponAnimation"), ProfileId);
 }
 
+UAnimMontage* URetakeWeaponAnimationProfile::GetThirdPersonReloadMontage(ERetakeMagazineReloadPose Pose) const
+{
+    if (Pose==ERetakeMagazineReloadPose::CrouchedMoving && ThirdPersonMovingCrouchedReload) return ThirdPersonMovingCrouchedReload;
+    if (Pose==ERetakeMagazineReloadPose::CrouchedIdle && ThirdPersonCrouchedReload) return ThirdPersonCrouchedReload;
+    return ThirdPersonMontages.ReloadMontage;
+}
+
 FPrimaryAssetId URetakeAmmoDefinition::GetPrimaryAssetId() const
 {
     return AmmoId.IsNone() ? FPrimaryAssetId() : FPrimaryAssetId(TEXT("RetakeAmmo"), AmmoId);
@@ -75,8 +82,31 @@ EDataValidationResult URetakeWeaponAnimationProfile::IsDataValid(FDataValidation
         V.Positive(Montage->RateScale,FString(Name)+TEXT(" rate scale"));
         V.Require(!Montage->SlotAnimTracks.IsEmpty(),FString(Name)+TEXT(" must have an animation slot."));
     };
+    if (ThirdPersonCrouchedReload || ThirdPersonMovingCrouchedReload || bUseThirdPersonReloadMontageForPerRound)
+        ValidatePutAway(ThirdPersonMontages.ReloadMontage,TEXT("ThirdPersonMontages.ReloadMontage"));
+    V.Require(!bUseThirdPersonReloadMontageForPerRound || !bContinuousThirdPersonReloadStages,
+        TEXT("An action-wide third-person reload montage cannot also use continuous third-person stages."));
+    if (ThirdPersonCrouchedReload) ValidatePutAway(ThirdPersonCrouchedReload,TEXT("ThirdPersonCrouchedReload"));
+    if (ThirdPersonMovingCrouchedReload) ValidatePutAway(ThirdPersonMovingCrouchedReload,TEXT("ThirdPersonMovingCrouchedReload"));
+    if (FirstPersonFirstEquipMontage) ValidatePutAway(FirstPersonFirstEquipMontage,TEXT("FirstPersonFirstEquipMontage"));
+    if (FirstPersonRechamberMontage) ValidatePutAway(FirstPersonRechamberMontage,TEXT("FirstPersonRechamberMontage"));
+    if (FirstPersonAimedRechamberMontage)
+    {
+        ValidatePutAway(FirstPersonAimedRechamberMontage,TEXT("FirstPersonAimedRechamberMontage"));
+        V.Require(FirstPersonRechamberMontage && FirstPersonAimedRechamberMontage->GetSkeleton()==FirstPersonRechamberMontage->GetSkeleton(),
+            TEXT("Aimed and ordinary first-person rechamber montages require the same skeleton."));
+    }
+    if (FirstPersonEmptyReloadMontage || bFitFirstPersonMagazineReloadToAction)
+        ValidatePutAway(FirstPersonMontages.ReloadMontage,TEXT("FirstPersonMontages.ReloadMontage"));
+    if (FirstPersonEmptyReloadMontage)
+    {
+        ValidatePutAway(FirstPersonEmptyReloadMontage,TEXT("FirstPersonEmptyReloadMontage"));
+        V.Require(!FirstPersonMontages.ReloadMontage || FirstPersonEmptyReloadMontage->GetSkeleton() == FirstPersonMontages.ReloadMontage->GetSkeleton(),
+            TEXT("First-person magazine reload montages must use the same skeleton."));
+    }
     if (bNoHandlingAnimations)
     {
+        V.Require(!FirstPersonFirstEquipMontage,TEXT("No-handling-animation profiles cannot declare a first-equip montage."));
         for (const auto* Montages:{&FirstPersonMontages,&ThirdPersonMontages})
             V.Require(!Montages->EquipMontage && !Montages->HolsterMontage && !Montages->DropMontage,
                 TEXT("No-handling-animation profiles cannot also declare draw/holster/drop montages."));

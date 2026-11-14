@@ -47,8 +47,11 @@ class RETAKEDESTRUCTION_API ARetakeDestructibleActor : public AActor
 public:
     ARetakeDestructibleActor();
     void Initialize(URetakeDestructionDefinition* InDefinition,uint32 InGeneration);
-    /** Server: one committed hit. Damage is already capped by the attack; DamageFraction scales authored strain. */
-    void ApplyDamageAt(const FRetakeDestructionHit& Hit,float Damage,float DamageFraction);
+    /**
+     * Server: one committed hit. Damage is already capped by the attack; DamageFraction scales authored strain.
+     * Returns the damage this actor accepted (Damage once the authority, configuration and physics checks pass, else 0).
+     */
+    float ApplyDamageAt(const FRetakeDestructionHit& Hit,float Damage,float DamageFraction);
     /**
      * Whether a grenade striking Hit at Velocity breaks through instead of bouncing. Deterministic over replicated state
      * (definition and released pieces), so the server, the owner's prediction and observer presentation agree.

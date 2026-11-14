@@ -12,6 +12,7 @@ struct RETAKEMAPSDK_API FRetakeAcousticMaterial
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="0", ClampMax="1")) float Transmission = .1f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="20", ClampMax="20000", Units="Hz")) float LowPassHz = 1000.f;
     bool IsValid() const;
+    FRetakeAcousticMaterial ForProfile(const FRetakeAudioPropagationProfile& Profile) const;
 };
 
 USTRUCT(BlueprintType)
@@ -78,7 +79,20 @@ namespace RetakeAcousticGraph
     constexpr int32 MaximumHops = 8;
     constexpr int32 MaximumAlternatives = 2;
     constexpr int32 MaximumSearchNodes = 256;
-    /** Caller owns topology and direct-line policy. OpenStates is indexed by Connections and is snapshotted on the game thread. */
+    constexpr int32 MaximumSegmentChecks = 32;
+    constexpr int32 MaximumObstructionLayers = 4;
+    constexpr int32 MaximumTraceChecks = 32;
+    /** Topology-only query. Runtime playback uses the overload with a scene query. */
     RETAKEMAPSDK_API FRetakeAcousticPathResult Resolve(const URetakeAcousticMapData& Map, TConstArrayView<uint8> OpenStates,
         const FVector& Source, const FVector& Listener, const FRetakeAudioPropagationProfile& Profile);
+    /** Negative connection indices denote the source (From) or listener (To). */
+    RETAKEMAPSDK_API FRetakeAcousticPathResult Resolve(const URetakeAcousticMapData& Map, TConstArrayView<uint8> OpenStates,
+        const FVector& Source, const FVector& Listener, const FRetakeAudioPropagationProfile& Profile,
+        TFunctionRef<bool(int32 FromConnection, int32 ToConnection)> IsSegmentClear);
+    /** Compare routes using bounded obstruction gain/filtering. MinimumGain is an already resolved direct path. */
+    RETAKEMAPSDK_API FRetakeAcousticPathResult ResolveWithTransmission(const URetakeAcousticMapData& Map,
+        TConstArrayView<uint8> OpenStates, const FVector& Source, const FVector& Listener,
+        const FRetakeAudioPropagationProfile& Profile,
+        TFunctionRef<FRetakeAcousticMaterial(int32 Region, int32 FromConnection, int32 ToConnection)> ResolveSegment,
+        float MinimumGain = 0.f);
 }

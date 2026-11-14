@@ -170,6 +170,7 @@ public:
     void FindOccluders(const FVector& Start,const FVector& End,FRetakeVisibilityCandidates& Out) const;
     void FindOccludersInBounds(const FBox& Bounds,FRetakeVisibilityCandidates& Out) const;
 #if WITH_EDITOR
+    static FString GetEffectLifeCycleError(const UNiagaraSystem& System);
     virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 private:

@@ -94,45 +94,128 @@ FRetakeAcousticPathResult URetakeAcousticWorldSubsystem::Resolve(const FVector& 
     if (Profile.GainAtDistance(Distance) <= .001f) return Result;
     const auto Quantize = [](const FVector& V) { return FIntVector(FMath::FloorToInt(V.X / 50.), FMath::FloorToInt(V.Y / 50.), FMath::FloorToInt(V.Z / 50.)); };
     FCacheKey Key{Quantize(Source), Quantize(Listener), Data->FindRegion(Source), Data->FindRegion(Listener),
-        Profile.RangeCm, Profile.FullGainRadiusCm, Profile.FalloffExponent, FObjectKey(SourceActor), FObjectKey(ListenerActor)};
+        Profile.RangeCm, Profile.FullGainRadiusCm, Profile.FalloffExponent, Profile.ObstructionStrength,
+        FObjectKey(SourceActor), FObjectKey(ListenerActor)};
+    for (const auto& Point : Profile.FalloffPoints)
+    {
+        Key.FalloffPoints.Add(Point.DistanceFraction);
+        Key.FalloffPoints.Add(Point.Gain);
+    }
     if (Key.SourceRegion == INDEX_NONE || Key.ListenerRegion == INDEX_NONE) return Result;
     const double Now = GetWorld()->GetTimeSeconds();
     if (const auto* Entry = Cache.Find(Key); Entry && Now < Entry->Expires && Now >= Entry->Expires - .1)
     { ++GQueryTotals.CacheHits; return Entry->Result; }
     FCollisionQueryParams Query(SCENE_QUERY_STAT(RetakeAcousticStructure), false, SourceActor);
     if (ListenerActor) Query.AddIgnoredActor(ListenerActor);
-    ++GQueryTotals.Traces;
-    // Channel 7 is RetakeAcoustics, default Ignore; only authored structural blockers opt in.
-    if (!GetWorld()->LineTraceTestByChannel(Source, Listener, ECC_GameTraceChannel7, Query))
+    int32 TraceChecks = 0;
+    bool bTraceLimitReached = false;
+    const auto ResolveStructure = [&](const FVector& From, const FVector& To, const FRetakeAcousticMaterial& Material)
     {
-        Result.Gain = Profile.GainAtDistance(Distance); Result.DistanceCm = Distance;
-        // Door leaves intentionally stay out of structural collision/bake hashes. Their registered
-        // state still applies to a direct ray through the leaf, including a handed-over destructible.
-        // Test in mesh-local space so diagonal doors are handled without treating their world AABB as a wall.
-        TArray<const ARetakeDoor*, TInlineAllocator<16>> CrossedDoors;
-        for (int32 Index=0; Index<ConnectionActors.Num(); ++Index)
+        const auto EffectiveMaterial = Material.ForProfile(Profile);
+        FRetakeAcousticMaterial Transmission;
+        Transmission.Transmission = 1.f;
+        Transmission.LowPassHz = 20000.f;
+        FCollisionQueryParams SegmentQuery = Query;
+        // Each distinct structural component is one bounded transmission layer.
+        // Continue across it rather than treating the first obstruction as absolute silence.
+        for (int32 Layer = 0; Layer <= RetakeAcousticGraph::MaximumObstructionLayers; ++Layer)
         {
-            const auto* Connection=ConnectionActors[Index].Get();
-            const auto* Door=Connection ? Connection->Door.Get() : nullptr;
-            const auto* Mesh=Door ? Door->DoorMesh.Get() : nullptr;
-            if (OpenStates[Index] || !Mesh || !Mesh->GetStaticMesh() || Door==SourceActor || Door==ListenerActor
-                || CrossedDoors.Contains(Door)) continue;
-            const FTransform Transform=Mesh->GetComponentTransform();
-            const FVector Start=Transform.InverseTransformPosition(Source),End=Transform.InverseTransformPosition(Listener);
-            if (!FMath::LineBoxIntersection(Mesh->GetStaticMesh()->GetBoundingBox(),Start,End,End-Start)) continue;
-            CrossedDoors.Add(Door);
-            const auto& Material=Data->Connections[Index].ClosedMaterial;
-            Result.Gain*=Material.Transmission;
-            Result.LowPassHz=FMath::Min(Result.LowPassHz,Material.LowPassHz);
+            if (TraceChecks == RetakeAcousticGraph::MaximumTraceChecks)
+            {
+                bTraceLimitReached = true;
+                Transmission.Transmission = 0.f;
+                return Transmission;
+            }
+            ++TraceChecks;
+            ++GQueryTotals.Traces;
+            FHitResult Hit;
+            if (!GetWorld()->LineTraceSingleByChannel(Hit, From, To, ECC_GameTraceChannel7, SegmentQuery))
+                return Transmission;
+            const UPrimitiveComponent* Blocker = Hit.GetComponent();
+            if (!Blocker || Layer == RetakeAcousticGraph::MaximumObstructionLayers)
+            {
+                Transmission.Transmission = 0.f;
+                return Transmission;
+            }
+            Transmission.Transmission *= EffectiveMaterial.Transmission;
+            Transmission.LowPassHz = FMath::Min(Transmission.LowPassHz, EffectiveMaterial.LowPassHz);
+            if (Transmission.Transmission <= .001f) return Transmission;
+            SegmentQuery.AddIgnoredComponent(Blocker);
         }
-        if (!CrossedDoors.IsEmpty())
-        {
-            // A stronger route through a neighbouring opening may beat transmission through the closed leaf.
-            const auto Indirect=RetakeAcousticGraph::Resolve(*Data,OpenStates,Source,Listener,Profile);
-            if (Indirect.Gain>Result.Gain) Result=Indirect;
-        }
+        return Transmission;
+    };
+    const auto DoorForConnection = [this](int32 Index) -> const ARetakeDoor*
+    {
+        const auto* Connection = ConnectionActors.IsValidIndex(Index) ? ConnectionActors[Index].Get() : nullptr;
+        return Connection ? Connection->Door.Get() : nullptr;
+    };
+    struct FClosedDoor
+    {
+        const ARetakeDoor* Actor;
+        const UStaticMeshComponent* Mesh;
+        int32 Connection;
+    };
+    TArray<FClosedDoor, TInlineAllocator<32>> ClosedDoors;
+    for (int32 Index = 0; Index < ConnectionActors.Num(); ++Index)
+    {
+        if (OpenStates[Index]) continue;
+        const auto* Door = DoorForConnection(Index);
+        const auto* Mesh = Door ? Door->DoorMesh.Get() : nullptr;
+        if (Mesh && Mesh->GetStaticMesh() && Door != SourceActor && Door != ListenerActor
+            && !ClosedDoors.ContainsByPredicate([Door](const FClosedDoor& Entry) { return Entry.Actor == Door; }))
+            ClosedDoors.Add({Door, Mesh, Index});
     }
-    else Result = RetakeAcousticGraph::Resolve(*Data, OpenStates, Source, Listener, Profile);
+    // Door leaves stay out of structural collision. Check the oriented leaf, including
+    // when the door has handed its collision over to a destructible.
+    const auto CrossesDoor = [](const FClosedDoor& Door, const FVector& From, const FVector& To)
+    {
+        const FTransform& Transform = Door.Mesh->GetComponentTransform();
+        const FVector Start = Transform.InverseTransformPosition(From);
+        const FVector End = Transform.InverseTransformPosition(To);
+        return FMath::LineBoxIntersection(Door.Mesh->GetStaticMesh()->GetBoundingBox(), Start, End, End - Start);
+    };
+
+    // Resolve a physical direct path first, including transmission. A coarse room graph
+    // or an exhausted optional route search cannot discard this already measured path.
+    FRetakeAcousticMaterial DirectMaterial = Data->Regions[Key.SourceRegion].InternalTransmission;
+    const auto& ListenerMaterial = Data->Regions[Key.ListenerRegion].InternalTransmission;
+    DirectMaterial.Transmission = FMath::Min(DirectMaterial.Transmission, ListenerMaterial.Transmission);
+    DirectMaterial.LowPassHz = FMath::Min(DirectMaterial.LowPassHz, ListenerMaterial.LowPassHz);
+    const auto Direct = ResolveStructure(Source, Listener, DirectMaterial);
+    Result.Gain = Profile.GainAtDistance(Distance) * Direct.Transmission;
+    Result.LowPassHz = Direct.LowPassHz;
+    Result.DistanceCm = Distance;
+    for (const FClosedDoor& Door : ClosedDoors)
+    {
+        if (!CrossesDoor(Door, Source, Listener)) continue;
+        const auto Material = Data->Connections[Door.Connection].ClosedMaterial.ForProfile(Profile);
+        Result.Gain *= Material.Transmission;
+        Result.LowPassHz = FMath::Min(Result.LowPassHz, Material.LowPassHz);
+    }
+    if (Result.Gain < Profile.GainAtDistance(Distance))
+    {
+        const auto Indirect = RetakeAcousticGraph::ResolveWithTransmission(*Data, OpenStates, Source, Listener, Profile,
+            [&](int32 Region, int32 FromConnection, int32 ToConnection)
+            {
+                const FVector& From = FromConnection == INDEX_NONE ? Source : Data->Connections[FromConnection].Position;
+                const FVector& To = ToConnection == INDEX_NONE ? Listener : Data->Connections[ToConnection].Position;
+                auto Segment = ResolveStructure(From, To, Data->Regions[Region].InternalTransmission);
+                const auto* FromDoor = DoorForConnection(FromConnection);
+                const auto* ToDoor = DoorForConnection(ToConnection);
+                // A traversed door already contributes its transmission at the graph edge.
+                for (const FClosedDoor& Door : ClosedDoors)
+                {
+                    if (Door.Actor == FromDoor || Door.Actor == ToDoor || !CrossesDoor(Door, From, To)) continue;
+                    const auto Material = Data->Connections[Door.Connection].ClosedMaterial.ForProfile(Profile);
+                    Segment.Transmission *= Material.Transmission;
+                    Segment.LowPassHz = FMath::Min(Segment.LowPassHz, Material.LowPassHz);
+                }
+                return Segment;
+            }, Result.Gain);
+        if (Indirect.Gain > Result.Gain) Result = Indirect;
+        else Result.bSearchLimitReached |= Indirect.bSearchLimitReached;
+    }
+    Result.bSearchLimitReached |= bTraceLimitReached;
     // Bounded cache storage, including denied paths. No scene search or allocation runs on an audio thread.
     if (Cache.Num() >= 4096) Cache.Reset();
     Cache.Add(Key, FCachedPath{Now + .1, Result});

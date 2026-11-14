@@ -8,6 +8,15 @@ bool FRetakeAcousticMaterial::IsValid() const
         && FMath::IsFinite(LowPassHz) && LowPassHz >= 20 && LowPassHz <= 20000;
 }
 
+FRetakeAcousticMaterial FRetakeAcousticMaterial::ForProfile(const FRetakeAudioPropagationProfile& Profile) const
+{
+    if (Profile.ObstructionStrength == 1.f) return *this;
+    FRetakeAcousticMaterial Result;
+    Result.Transmission = FMath::Pow(Transmission, Profile.ObstructionStrength);
+    Result.LowPassHz = FMath::Clamp(20000.f * FMath::Pow(LowPassHz / 20000.f, Profile.ObstructionStrength), 20.f, 20000.f);
+    return Result;
+}
+
 bool FRetakeAcousticRegionData::Contains(const FVector& Position) const
 {
     const FVector Local = Transform.InverseTransformPosition(Position);
@@ -73,64 +82,118 @@ bool URetakeAcousticMapData::Validate(FString& Error) const
 FRetakeAcousticPathResult RetakeAcousticGraph::Resolve(const URetakeAcousticMapData& Map, TConstArrayView<uint8> OpenStates,
     const FVector& Source, const FVector& Listener, const FRetakeAudioPropagationProfile& Profile)
 {
+    return Resolve(Map, OpenStates, Source, Listener, Profile, [](int32, int32) { return true; });
+}
+
+FRetakeAcousticPathResult RetakeAcousticGraph::Resolve(const URetakeAcousticMapData& Map, TConstArrayView<uint8> OpenStates,
+    const FVector& Source, const FVector& Listener, const FRetakeAudioPropagationProfile& Profile,
+    TFunctionRef<bool(int32, int32)> IsSegmentClear)
+{
+    return ResolveWithTransmission(Map, OpenStates, Source, Listener, Profile,
+        [&](int32, int32 From, int32 To)
+        {
+            FRetakeAcousticMaterial Segment;
+            Segment.Transmission = IsSegmentClear(From, To) ? 1.f : 0.f;
+            Segment.LowPassHz = 20000.f;
+            return Segment;
+        });
+}
+
+FRetakeAcousticPathResult RetakeAcousticGraph::ResolveWithTransmission(const URetakeAcousticMapData& Map,
+    TConstArrayView<uint8> OpenStates, const FVector& Source, const FVector& Listener,
+    const FRetakeAudioPropagationProfile& Profile,
+    TFunctionRef<FRetakeAcousticMaterial(int32, int32, int32)> ResolveSegment, float MinimumGain)
+{
     FRetakeAcousticPathResult Result;
     const int32 Start = Map.FindRegion(Source), Finish = Map.FindRegion(Listener);
     if (Start == INDEX_NONE || Finish == INDEX_NONE || OpenStates.Num() != Map.Connections.Num()
         || FVector::DistSquared(Source, Listener) >= FMath::Square(Profile.RangeCm)) return Result;
-    if (Start == Finish)
-    {
-        Result.DistanceCm = FVector::Distance(Source, Listener);
-        const auto& Material = Map.Regions[Start].InternalTransmission;
-        Result.Gain = Profile.GainAtDistance(Result.DistanceCm) * Material.Transmission;
-        Result.LowPassHz = Material.LowPassHz;
-        return Result;
-    }
     struct FNode
     {
         int32 Region = INDEX_NONE;
-        FVector Position = FVector::ZeroVector;
+        int32 Arrival = INDEX_NONE;
+        int32 Previous = INDEX_NONE;
         float Distance = 0, Transmission = 1, LowPass = 20000, UpperGain = 1;
         int32 Hops = 0;
         int32 Visited[MaximumHops + 1]{};
     };
     TArray<FNode, TInlineAllocator<MaximumSearchNodes>> Pending;
-    FNode Root; Root.Region = Start; Root.Position = Source; Root.Visited[0] = Start;
+    FNode Root; Root.Region = Start; Root.Visited[0] = Start;
     Pending.Add(Root);
     int32 Expanded = 0, Alternatives = 0;
+    // Check the best candidates first. Shared segments can be reused by several routes.
+    struct FCheckedSegment { int32 Region, From, To; FRetakeAcousticMaterial Material; };
+    TArray<FCheckedSegment, TInlineAllocator<MaximumSegmentChecks>> CheckedSegments;
+    const auto CheckSegment = [&](int32 Region, int32 From, int32 To)
+    {
+        for (const auto& Segment : CheckedSegments)
+        {
+            if (Segment.Region == Region && Segment.From == From && Segment.To == To)
+                return Segment.Material;
+        }
+        if (CheckedSegments.Num() == MaximumSegmentChecks)
+        {
+            Result.bSearchLimitReached = true;
+            FRetakeAcousticMaterial Blocked;
+            Blocked.Transmission = 0.f;
+            return Blocked;
+        }
+        const auto Material = ResolveSegment(Region, From, To);
+        CheckedSegments.Add({Region, From, To, Material});
+        return Material;
+    };
+    const auto BestGain = [&]() { return FMath::Max3(.001f, MinimumGain, Result.Gain); };
     while (!Pending.IsEmpty() && Expanded < MaximumSearchNodes && Alternatives < MaximumAlternatives)
     {
         int32 Best = 0;
         for (int32 Index = 1; Index < Pending.Num(); ++Index)
             if (Pending[Index].UpperGain > Pending[Best].UpperGain) Best = Index;
-        const FNode Node = Pending[Best]; Pending.RemoveAtSwap(Best, EAllowShrinking::No);
+        FNode Node = Pending[Best]; Pending.RemoveAtSwap(Best, EAllowShrinking::No);
         ++Expanded;
-        if (Node.Region == Finish)
+        if (Node.UpperGain <= BestGain()) break;
+        if (Node.Hops > 0)
         {
-            ++Alternatives;
-            const float Distance = Node.Distance + FVector::Distance(Node.Position, Listener);
-            const float Gain = Profile.GainAtDistance(Distance) * Node.Transmission;
-            if (Gain > Result.Gain)
-            { Result.Gain = Gain; Result.LowPassHz = Node.LowPass; Result.DistanceCm = Distance; Result.Connections = Node.Hops; }
+            const auto Segment = CheckSegment(Node.Visited[Node.Hops - 1], Node.Previous, Node.Arrival);
+            Node.Transmission *= Segment.Transmission;
+            Node.LowPass = FMath::Min(Node.LowPass, Segment.LowPassHz);
+        }
+        const FVector& Position = Node.Arrival == INDEX_NONE ? Source : Map.Connections[Node.Arrival].Position;
+        Node.UpperGain = Profile.GainAtDistance(Node.Distance + FVector::Distance(Position, Listener)) * Node.Transmission;
+        if (Node.UpperGain <= BestGain()) continue;
+        if (Node.Region == Finish && Node.Hops > 0)
+        {
+            const auto Segment = CheckSegment(Finish, Node.Arrival, INDEX_NONE);
+            const float Distance = Node.Distance + FVector::Distance(Position, Listener);
+            const float Gain = Profile.GainAtDistance(Distance) * Node.Transmission * Segment.Transmission;
+            if (Gain > BestGain())
+            {
+                ++Alternatives;
+                Result.Gain = Gain; Result.LowPassHz = FMath::Min(Node.LowPass, Segment.LowPassHz);
+                Result.DistanceCm = Distance; Result.Connections = Node.Hops;
+            }
             continue;
         }
-        if (Node.Hops == MaximumHops || Node.UpperGain <= Result.Gain) continue;
+        if (Node.Hops == MaximumHops) continue;
         for (int32 Index : Map.Regions[Node.Region].Connections)
         {
             const auto& Edge = Map.Connections[Index];
             const int32 Next = Edge.RegionA == Node.Region ? Edge.RegionB : Edge.RegionB == Node.Region ? Edge.RegionA : INDEX_NONE;
-            if (Next == INDEX_NONE) continue;
+            if (Next == INDEX_NONE || Index == Node.Arrival) continue;
             bool Seen = false;
             for (int32 Hop = 0; Hop <= Node.Hops; ++Hop) Seen |= Node.Visited[Hop] == Next;
-            if (Seen) continue;
-            const auto& Material = OpenStates[Index] ? Edge.OpenMaterial : Edge.ClosedMaterial;
+            // A route between two points in one region can leave and return via different openings.
+            if (Seen && Next != Finish) continue;
+            const auto Material = (OpenStates[Index] ? Edge.OpenMaterial : Edge.ClosedMaterial).ForProfile(Profile);
             FNode Candidate = Node;
-            Candidate.Region = Next; Candidate.Position = Edge.Position;
-            Candidate.Distance += FVector::Distance(Node.Position, Edge.Position);
+            Candidate.Region = Next;
+            Candidate.Previous = Node.Arrival;
+            Candidate.Arrival = Index;
+            Candidate.Distance += FVector::Distance(Position, Edge.Position);
             Candidate.Transmission *= Material.Transmission;
             Candidate.LowPass = FMath::Min(Candidate.LowPass, Material.LowPassHz);
             Candidate.Visited[++Candidate.Hops] = Next;
             Candidate.UpperGain = Profile.GainAtDistance(Candidate.Distance + FVector::Distance(Edge.Position, Listener)) * Candidate.Transmission;
-            if (Candidate.UpperGain <= FMath::Max(.001f, Result.Gain)) continue;
+            if (Candidate.UpperGain <= BestGain()) continue;
             if (Pending.Num() == MaximumSearchNodes) { Result.bSearchLimitReached = true; continue; }
             Pending.Add(Candidate);
         }

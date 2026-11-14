@@ -17,6 +17,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") FPlayerAnims FirstPersonAnims;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") FPlayerAnims ThirdPersonAnims;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") FMontageData FirstPersonMontages;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") TObjectPtr<UAnimMontage> FirstPersonFirstEquipMontage;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") FMontageData ThirdPersonMontages;
     /** Explicit no-animation draw/holster/drop. All corresponding FP/TP montage fields must be empty. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") bool bNoHandlingAnimations=false;
@@ -27,9 +28,26 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") TObjectPtr<UAnimMontage> ThirdPersonBoltCycle;
     /** Joined per-round TP clips retain their pose/gun contact between stages; only action entry/exit fade. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") bool bContinuousThirdPersonReloadStages=false;
+    /** Optional reload montages for the stance and movement recorded when the action begins. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") TObjectPtr<UAnimMontage> ThirdPersonCrouchedReload;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") TObjectPtr<UAnimMontage> ThirdPersonMovingCrouchedReload;
+    /** Optional owner arm montage selected by the recorded empty-magazine reload state. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") TObjectPtr<UAnimMontage> FirstPersonEmptyReloadMontage;
+    /** Play the third-person reload montage once from the action start while owner and weapon meshes play their per-round stages. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") bool bUseThirdPersonReloadMontageForPerRound=false;
+    /** Fit the first-person magazine reload montage to the authoritative action window. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") bool bFitFirstPersonMagazineReloadToAction=false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") TObjectPtr<UAnimMontage> FirstPersonRechamberMontage;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") TObjectPtr<UAnimMontage> FirstPersonAimedRechamberMontage;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") FMontageData WeaponMontages;
     /** How the third-person body follows the look while this weapon is held. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation") FRetakeThirdPersonAimPose ThirdPersonAim;
+    bool UsesThirdPersonReloadMontage(ERetakeReloadPolicy Policy) const
+    {
+        return Policy==ERetakeReloadPolicy::Magazine
+            || (Policy==ERetakeReloadPolicy::PerRound && bUseThirdPersonReloadMontageForPerRound);
+    }
+    UAnimMontage* GetThirdPersonReloadMontage(ERetakeMagazineReloadPose Pose) const;
     virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 #if WITH_EDITOR
     virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;

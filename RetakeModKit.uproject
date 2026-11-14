@@ -26,6 +26,10 @@
     },
     {
       "Enabled": true,
+      "Name": "PluginBrowser"
+    },
+    {
+      "Enabled": true,
       "Name": "PythonScriptPlugin"
     },
     {
@@ -79,10 +83,6 @@
     {
       "Enabled": true,
       "Name": "SkeletalReduction"
-    },
-    {
-      "Enabled": true,
-      "Name": "PluginBrowser"
     }
   ]
 }

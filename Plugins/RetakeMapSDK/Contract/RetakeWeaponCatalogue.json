@@ -1,17 +1,7 @@
 {
-  "contentHash": "27117d7bffbef18b98c2e8b1f1bfe1565a25e5cb2369f371088ee1ce4eacab4e",
+  "contentHash": "0d3b72bfaf19ac2e05471edd99a8672a6982fc3ea5e3f90ca2db95fe3fa3a41a",
   "format": 1,
   "weapons": [
-    {
-      "displayName": "AK-47 Reference",
-      "id": "ak47",
-      "slot": "Primary"
-    },
-    {
-      "displayName": "AK-74u",
-      "id": "ak74u",
-      "slot": "Primary"
-    },
     {
       "displayName": "AT-X MIL",
       "id": "atxmil",

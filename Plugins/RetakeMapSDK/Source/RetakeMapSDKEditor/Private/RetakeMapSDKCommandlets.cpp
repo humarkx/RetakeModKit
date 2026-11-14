@@ -34,6 +34,8 @@
 #include "Serialization/AsyncLoading2.h"
 #include "FileHelpers.h"
 #include "HAL/FileManager.h"
+#include "ImageCore.h"
+#include "ImageUtils.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/FileHelper.h"
@@ -52,6 +54,26 @@
 
 namespace
 {
+    bool WriteMapPreview(FRetakeModMap& Map, const FString& Directory)
+    {
+        auto* Texture = Cast<UTexture2D>(FSoftObjectPath(Map.Preview).TryLoad());
+        FImage Source;
+        if (!Texture || !Texture->Source.GetMipImage(Source, 0) || Source.NumSlices != 1
+            || Source.SizeX <= 0 || Source.SizeY <= 0) return false;
+        const double Scale = FMath::Min(1.0, double(FRetakeModMap::MaxPreviewImageDimension) / FMath::Max(Source.SizeX, Source.SizeY));
+        FImage Preview(FMath::Max(1, FMath::RoundToInt32(Source.SizeX * Scale)),
+            FMath::Max(1, FMath::RoundToInt32(Source.SizeY * Scale)), ERawImageFormat::BGRA8, EGammaSpace::sRGB);
+        FImageCore::ResizeImage(Source, Preview);
+        TArray64<uint8> Png;
+        if (!FImageUtils::CompressImage(Png, TEXT("png"), Preview) || Png.IsEmpty()
+            || Png.Num() > FRetakeModMap::MaxPreviewImageBytes) return false;
+        const FString Path = FPaths::Combine(Directory, Map.GetPreviewImagePath());
+        if (!IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true)
+            || !FFileHelper::SaveArrayToFile(Png, *Path)) return false;
+        Map.PreviewImageHash = FRetakeModManifest::HashFile(Path, Map.PreviewImageSize);
+        return !Map.PreviewImageHash.IsEmpty() && Map.PreviewImageSize == Png.Num();
+    }
+
     const TCHAR* const ProfilePlatforms[] = { TEXT("Windows"), TEXT("Linux") };
 
     bool ProfileHashes(TMap<FString, FString>& Out, const FString& OutDir)
@@ -583,6 +605,8 @@ int32 URetakeModManifestCommandlet::Main(const FString& Params)
         C.CustomVersions.KeySort(TLess<FString>());
     }
 
+    for (FRetakeModMap& Map : Manifest.Maps)
+        if (!WriteMapPreview(Map, Dir)) return Fail(Map.MapId + TEXT(" could not export its standalone Preview PNG"));
     if (!Manifest.Validate(Error)) return Fail(Error);
     const FString ManifestPath=FPaths::Combine(Dir,TEXT("manifest.json"));
     if (!Manifest.SaveToFile(ManifestPath, Error)) return Fail(Error);

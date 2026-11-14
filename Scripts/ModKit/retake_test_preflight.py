@@ -23,7 +23,8 @@ def installation(path, platform, manifest, digest, engine_record_id):
             raise ValueError(f'Choose the installed {label}.')
         path = Path(path).resolve(strict=True)
         project = None
-        for parent in [path.parent, *list(path.parents)[:5]]:
+        package_root = path if path.is_dir() else path.parent
+        for parent in (package_root, *package_root.parents[:4]):
             for candidate in (parent / 'Retake', parent):
                 if (candidate / 'ModKit/compatibility.json').is_file():
                     project = candidate

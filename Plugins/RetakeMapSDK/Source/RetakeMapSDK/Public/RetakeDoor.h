@@ -7,8 +7,8 @@
 
 class APawn;
 class UCurveFloat;
+class UBoxComponent;
 class USceneComponent;
-class USphereComponent;
 class UStaticMeshComponent;
 
 /** SDK contract (MKD-029): cooked maps store these numbers. Append only; never reorder or renumber. */
@@ -47,7 +47,7 @@ enum class ERetakeDoorHinge : uint8
  * replicated state, so clients never wait for per-frame updates. The moving leaf pushes pawns that implement
  * IRetakeMapElementPushable; it registers with URetakeMapElementSubsystem and reports StateChannel on every state change.
  * Frozen per content generation: UPROPERTY names, order, types and defaults, and the subobject names Root, DoorPivot,
- * DoorMesh and InteractionRange (visibility bakes hash DoorMesh's path). The replicated members are also the live and
+ * DoorMesh and InteractionReach (visibility bakes hash DoorMesh's path). The replicated members are also the live and
  * replay wire layout.
  */
 UCLASS(Blueprintable)
@@ -67,7 +67,7 @@ private:
 	UFUNCTION() void OnRep_ReplayProgress();
 public:
 
-	/** True while the pawn is close enough and the door accepts input. Server and client safe. */
+	/** True while the pawn's eyes are within InteractionDistance of the leaf and the door accepts input. Server and client safe. */
 	UFUNCTION(BlueprintPure, Category="Retake|Doors") bool IsUsableFor(const APawn* Pawn) const;
 	/** Server only. Toggles the door for the pawn; a request during a swing reverses it. */
 	UFUNCTION(BlueprintCallable, Category="Retake|Doors") bool Interact(APawn* Pawn);
@@ -100,8 +100,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="Retake|Doors") bool CanAcceptRequest() const;
 	/** Hinge location in world space. */
 	UFUNCTION(BlueprintPure, Category="Retake|Doors") FVector GetHingeLocation() const;
-	/** Middle of the leaf in world space; interaction distance is measured from here. */
+	/** Middle of the leaf in world space: where door sounds play and the swing side is judged from. */
 	UFUNCTION(BlueprintPure, Category="Retake|Doors") FVector GetInteractionLocation() const;
+	/**
+	 * Point of the leaf's box nearest to Location, in world space, at the leaf's current swing; Location itself when it is
+	 * inside the box. Interaction distance is measured from the user's eyes to this point.
+	 */
+	UFUNCTION(BlueprintPure, Category="Retake|Doors") FVector GetClosestLeafPoint(const FVector& Location) const;
 	/**
 	 * True while the leaf is closed, at rest, solid to pawns and axis-aligned: the visibility system then treats the leaf
 	 * and its frame as one solid wall. OutLeaf is the closed leaf's world box, OutAxis its thin horizontal axis (0 X, 1 Y).
@@ -120,8 +125,11 @@ public:
 	/** The hinge. Only this component rotates. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Retake|Doors") TObjectPtr<USceneComponent> DoorPivot;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Retake|Doors") TObjectPtr<UStaticMeshComponent> DoorMesh;
-	/** Visualizer only: the sphere around the leaf centre inside which the interact key reaches this door. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Retake|Doors") TObjectPtr<USphereComponent> InteractionRange;
+	/**
+	 * Visualizer only: the leaf's box grown by InteractionDistance on every side. The user's eyes must be inside it to reach
+	 * the door; the true reach has rounded edges and corners, so the box's corners slightly overstate it.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Retake|Doors") TObjectPtr<UBoxComponent> InteractionReach;
 
 	/**
 	 * Target size of the leaf in the mesh's own axes (X width along the leaf, Y thickness, Z height), in cm. The mesh
@@ -156,8 +164,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Doors") bool bStopWhenObstructed = false;
 	/** Optional 0..1 easing over normalized time; an ease-in-out is used when unset. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Doors") TObjectPtr<UCurveFloat> OpenCurve;
-	/** Measured from the middle of the leaf. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Doors", meta=(ClampMin="1", Units="cm")) float InteractionDistance = 180.f;
+	/**
+	 * How far the user's eyes may be from the nearest point of the leaf, in cm. Measured from the eyes so that leaning toward
+	 * a door brings it into reach, and from the leaf's surface so that reach is the same across its whole width and height.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Doors", meta=(ClampMin="1", Units="cm")) float InteractionDistance = 160.f;
 	/**
 	 * Seconds an open door stays open before closing on its own; zero keeps it open. A pawn in the doorway holds it open: the
 	 * delay counts from the last moment one stood in the closed leaf's box grown by the leaf's width on every side (the doorway,
@@ -177,7 +188,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Doors|Prompt") FText OpenPrompt = NSLOCTEXT("RetakeDoors", "OpenPrompt", "Open door");
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Doors|Prompt") FText ClosePrompt = NSLOCTEXT("RetakeDoors", "ClosePrompt", "Close door");
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Doors|Prompt") FText LockedPrompt = NSLOCTEXT("RetakeDoors", "LockedPrompt", "Locked");
-	/** Draws the interaction sphere while playing; the editor viewport always shows it. `Retake.Doors.Debug 1` shows it on every door. */
+	/** Draws the interaction reach box while playing; the editor viewport always shows it. `Retake.Doors.Debug 1` shows it on every door. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Retake|Doors|Debug") bool bShowInteractionRange = false;
 
 protected:
@@ -190,7 +201,7 @@ private:
 	UPROPERTY(Replicated) float TargetYaw = 90.f;
 	UFUNCTION() void OnRep_DoorState();
 
-	/** Derives the mesh scale from DoorSize, shifts the mesh onto the hinge edge, and re-centres the range visualizer. */
+	/** Derives the mesh scale from DoorSize, shifts the mesh onto the hinge edge, and fits the reach visualizer to the leaf. */
 	void ApplyDoorSize() const;
 	/** Pawns whose capsule intersects the leaf at its current pose, or at the pose the pivot would have at Alpha. */
 	void FindPawnsInLeaf(TArray<APawn*>& OutPawns, const float* AtProgress = nullptr) const;

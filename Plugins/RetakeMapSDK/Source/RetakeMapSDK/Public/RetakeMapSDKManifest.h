@@ -30,6 +30,9 @@ struct RETAKEMAPSDK_API FRetakeModMap
     UPROPERTY() FString Description;
     UPROPERTY() FString LoadingArt;
     UPROPERTY() FString Preview;
+    /** Optional standalone PNG for map votes before the map's cooked containers are mounted. */
+    UPROPERTY() FString PreviewImageHash;
+    UPROPERTY() int64 PreviewImageSize = 0;
     /** The mod's URetakeMinimapDefinition for this map, written by -run=RetakeMinimapBake. */
     UPROPERTY() FString Minimap;
     /** Default (exterior) URetakeAmbienceProfile. */
@@ -42,6 +45,10 @@ struct RETAKEMAPSDK_API FRetakeModMap
 
     /** Long package names of the presentation paths that are set. */
     TArray<FString> GetPresentationPackages() const;
+    FString GetPreviewImagePath() const;
+
+    static constexpr int32 MaxPreviewImageDimension = 512;
+    static constexpr int64 MaxPreviewImageBytes = 1024 * 1024;
 };
 
 /** One cooked container file for one cook platform ("Windows", "LinuxServer"). */

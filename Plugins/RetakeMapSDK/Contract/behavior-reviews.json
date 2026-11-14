@@ -5,25 +5,373 @@
       "compatible": true,
       "evidence": [
         {
-          "hash": "8cc8f8f6f1b266da45ed39a552dc4f059476e92610ad2f012b969a88faeecdfe",
-          "path": "reviews/3299f4841f4f-alpha35-door-state-and-map-identities.json"
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
         }
       ],
-      "from": "3e4ae790ab49a7c3de3166fdf304b8562f71a65ebd1fc1a1b030f42c70b3f853",
-      "reviewType": "SDK40 resource additions plus persistent door-state repairs and consistent map-ID validation",
-      "to": "3299f4841f4f21e89f96e15d2210dc5c564249f8929f5ff1bfc0f7df571c14bf"
+      "from": "1649fba7389cf977ebad152657393b80985ba0ac598508dae1fd245fc95e8934",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
     },
     {
       "compatible": true,
       "evidence": [
         {
-          "hash": "8cc8f8f6f1b266da45ed39a552dc4f059476e92610ad2f012b969a88faeecdfe",
-          "path": "reviews/3299f4841f4f-alpha35-door-state-and-map-identities.json"
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
         }
       ],
-      "from": "5419d78fc7810348f2baba0198e3c90f283856c8fc2ad095167f23feb289f9cf",
-      "reviewType": "SDK40 resource additions plus persistent door-state repairs and consistent map-ID validation",
-      "to": "3299f4841f4f21e89f96e15d2210dc5c564249f8929f5ff1bfc0f7df571c14bf"
+      "from": "4122d83097758c4ab3ab455801bba752242ac3eff9f28d88f7f5435db37e3fde",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "a76e620193d64119b1603d45a3a50e8a2573c40d34a106566923bb6b1f10e75b",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "344c082a58d55053872202617f29353e3a287b0bf8fb89b0d651b923784f6c3b",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "f6959defff4bccc182a28f3e65192888f56bcb6cf96790a94cd5b1386b60ed2d",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "4d30d0586b0afb3298e84d0a3fe4d80faee32029fa7ac0b50a3e92f135cbc91a",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "177b6aa14f3ff96a4e2e4a11b67ef76827eefabe9a2d35e3bbf4b42e91e8fc3c",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "0923596a90c32c00b75b5cf7429a1ad5587802be658808e2e0b6ca2426fcc216",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "fd7394edd8515ee379e9d87c1bdc27fdfbd2bbc3dd68d395da00640f449aec0b",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "fc3ea1879ce76e103a7d34f3330ed3b826e9255196981b1f4c9fcb3b8be27adb",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "5a36d0c3ed4608f50cd22adfc7021b1c70f597f0dd75c58f70c5c3777f186ac5",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "543e5d9157c693ddf9c9799d499562bb119756f68c650fe50b1ffa7e4c28e611",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "9ef7347d45e523605ea4c428dc90ff3ca3c032b4194a25a51811fb23f4e05cb4",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "994ebde36e9fa6ed0796e04257109d9f614f87541f34228a4807f25d6d4c1e9f",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "0c0394c4f0f575998c899f7dd36aad7143701b379f3a4747662065fc69264e61",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "aca2d18393cf5dac4818b0d958ddeb4386db9cb8374cbadec8f7cd52b4fc42a6",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "b4aefd675536da44d68e01bc6b8f47e39bb0fc85e88c11949175a0d2af8eeb19",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e7452e90612919187119a25f0a66b7bbaf29ae08621e5b279af5da15a5c57570",
+          "path": "reviews/003d8beb34e4-base-roster61.json"
+        },
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "d598417e7a82602d6cfeed928ea63010c58346adbecbfc0a36b538b3284284cc",
+      "removedWeaponIds": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "reviewType": "Tagged SDK compatibility for maps whose pickups and policies resolve against the active catalogue",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
+    },
+    {
+      "compatible": true,
+      "evidence": [
+        {
+          "hash": "e3e51c64b02d746f296849136702cb4d5bc3dddf96dd605d5b0b89217eb6a684",
+          "path": "reviews/dcc80d3631e2-map-preview62.json"
+        }
+      ],
+      "from": "003d8beb34e43a8a38f302a99a44531afc9f743795ae42768084de88d985503a",
+      "reviewType": "Optional map preview metadata and download payload",
+      "to": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
     }
   ]
 }

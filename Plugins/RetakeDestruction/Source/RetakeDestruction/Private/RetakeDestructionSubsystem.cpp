@@ -3,6 +3,8 @@
 #include "RetakeDestructiblePlacement.h"
 #include "RetakeDestructibleActor.h"
 #include "RetakeDestructionDefinition.h"
+#include "RetakeStagedDestructible.h"
+#include "RetakeStageImpactReceiver.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -24,15 +26,31 @@ void URetakeDestructionSubsystem::Initialize(FSubsystemCollectionBase& Collectio
 {
     Super::Initialize(Collection);
     if (auto* Elements=Collection.InitializeDependency<URetakeMapElementSubsystem>())
+    {
         Observation=Elements->Observe<ARetakeDestructiblePlacement>(*this,
             [this](ARetakeDestructiblePlacement& P){AddPlacement(P);},
             [this](ARetakeDestructiblePlacement& P){RemovePlacement(P);});
+        StagedObservation=Elements->Observe<ARetakeStagedDestructible>(*this,
+            [this](ARetakeStagedDestructible& A){StagedActors.Add(&A);NotifyStructureChanged();},
+            [this](ARetakeStagedDestructible& A){ClearStageImpactFires(A);StagedActors.Remove(&A);NotifyStructureChanged();},
+            [this](ARetakeStagedDestructible& A, FName)
+            {
+                if (StageImpactReceivers.ContainsByPredicate([&A](const URetakeStageImpactReceiver* Receiver)
+                    { return Receiver->BelongsTo(A) && Receiver->HasStageRollback(); })) ClearStageImpactFires(A);
+            });
+    }
 }
 void URetakeDestructionSubsystem::Deinitialize()
 {
-    if (auto* Elements=URetakeMapElementSubsystem::Get(GetWorld())) Elements->Unobserve(Observation);
-    OnDebrisSurfaceImpact.Clear();OnStructureChanged.Clear();
-    Placements.Reset();Actors.Reset();ActiveEffects.Reset();WorldEffects.Reset();Super::Deinitialize();
+    if (auto* Elements=URetakeMapElementSubsystem::Get(GetWorld()))
+    {
+        Elements->Unobserve(Observation);
+        Elements->Unobserve(StagedObservation);
+    }
+    OnDebrisSurfaceImpact.Clear();OnStructureChanged.Clear();OnStagedBlast.Clear();
+    for (URetakeStageImpactReceiver* Receiver : StageImpactReceivers) Receiver->Clear();
+    StageImpactReceivers.Reset();
+    Placements.Reset();Actors.Reset();StagedActors.Reset();ActiveEffects.Reset();WorldEffects.Reset();Super::Deinitialize();
 }
 void URetakeDestructionSubsystem::AddPlacement(ARetakeDestructiblePlacement& P)
 {
@@ -57,6 +75,8 @@ void URetakeDestructionSubsystem::ResetForRound()
     if (GetWorld()->GetNetMode()==NM_Client) return;
     TRACE_CPUPROFILER_EVENT_SCOPE(RetakeDestruction_Reset);
     ++Generation; if (!Generation) ++Generation;
+    for (const auto& Weak : StagedActors)
+        if (ARetakeStagedDestructible* Actor = Weak.Get()) { ClearStageImpactFires(*Actor); Actor->ResetForRound(); }
     // A new actor rebuilds its collection's physics state and connectivity graph and replicates to every client: replacing every
     // collection cost 110-150 ms of server frames on the obj maps (alpha.30). Only changed ones need it. An untouched one is
     // already what a new actor would be on every machine, so it is kept and joins the new generation.
@@ -82,10 +102,28 @@ namespace
         return Direct;
     }
 }
-void URetakeDestructionSubsystem::GatherPoint(const FHitResult& Hit,const FVector& Direction,float Damage,TArray<FRetakeDestructionHit>& Out,float StrainScale) const
+void URetakeDestructionSubsystem::GatherPoint(const FHitResult& Hit,const FVector& Direction,float Damage,
+    TArray<FRetakeDestructionHit>& Out,float StrainScale,bool bMelee,ERetakeDestructionDamageCause Cause) const
 {
+    if (!Hit.bBlockingHit || Damage<=0 || !FMath::IsFinite(Damage)) return;
+    if (auto* Staged=Cast<ARetakeStagedDestructible>(Hit.GetActor()))
+    {
+        const int32 Part=Staged->FindHitPart(Hit.GetComponent());
+        if (Part==INDEX_NONE || !StagedActors.Contains(Staged)) return;
+        FRetakeDestructionHit& Direct=Out.AddDefaulted_GetRef();
+        Direct.StagedActor=Staged;
+        Direct.StagedPart=Part;
+        Direct.Generation=Generation;
+        Direct.Point=Hit.ImpactPoint;
+        Direct.Direction=Direction.GetSafeNormal();
+        Direct.SurfaceNormal=Hit.Normal;
+        Direct.Damage=Damage;
+        Direct.bMelee=bMelee;
+        Direct.Cause=Cause;
+        return;
+    }
     auto* A=Cast<ARetakeDestructibleActor>(Hit.GetActor());
-    if (!A || A->IsCleared() || !A->HasAuthority() || !Hit.bBlockingHit || Damage<=0 || !FMath::IsFinite(Damage)) return;
+    if (!A || A->IsCleared() || !A->HasAuthority()) return;
     if (Hit.GetComponent()==A->GetCollectionComponent() && A->IsReleased(Hit.Item)) return;
     auto* Response=A->GetDefinition();
     if (!Response) return;
@@ -149,7 +187,8 @@ void URetakeDestructionSubsystem::GatherDebris(const FVector& Start,const FVecto
     if (Nearest.Actor.IsValid()) Out.Add(Nearest);
 }
 void URetakeDestructionSubsystem::GatherExplosion(const FVector& Origin,float Damage,float Inner,float Outer,ECollisionChannel CoverChannel,const AActor* Causer,
-    TArray<FRetakeDestructionHit>& Out,float FragileGrenadeDamage,uint8 QueryIgnoreMask) const
+    TArray<FRetakeDestructionHit>& Out,float FragileGrenadeDamage,uint8 QueryIgnoreMask,float EdgeDamage,
+    ERetakeDestructionDamageCause Cause) const
 {
     if (GetWorld()->GetNetMode()==NM_Client || !FMath::IsFinite(Outer) || Outer<=0 || Damage<=0 || Origin.ContainsNaN()
         || !FMath::IsFinite(FragileGrenadeDamage) || FragileGrenadeDamage<0) return;
@@ -159,7 +198,7 @@ void URetakeDestructionSubsystem::GatherExplosion(const FVector& Origin,float Da
     for (TActorIterator<APawn> It(GetWorld());It;++It) Query.AddIgnoredActor(*It);
     for (const auto& Weak:Actors)
     {
-        auto* A=Weak.Get(); if (!A || A->IsCleared() || !A->HasAuthority()) continue;
+        auto* A=Weak.Get(); if (!A || A==Causer || A->IsCleared() || !A->HasAuthority()) continue;
         if (FragileGrenadeDamage>0 && !A->GetDefinition()->IsBrokenByGrenade(FragileGrenadeDamage)) continue;
         const FBox Bounds=A->GetCollectionComponent()->Bounds.GetBox();
         const FVector Point=Bounds.GetClosestPointTo(Origin);
@@ -171,13 +210,52 @@ void URetakeDestructionSubsystem::GatherExplosion(const FVector& Origin,float Da
         // Applying another actor-bounds falloff here would attenuate destruction twice.
         Out.Add({A,Origin,(Bounds.GetCenter()-Origin).GetSafeNormal(),Damage,Radius,A->GetGeneration()});
     }
+    if (FragileGrenadeDamage>0 || !FMath::IsFinite(Damage) || !FMath::IsFinite(Inner)
+        || !FMath::IsFinite(EdgeDamage) || EdgeDamage<0.f || EdgeDamage>Damage) return;
+    for (const auto& Weak : StagedActors)
+    {
+        ARetakeStagedDestructible* Actor=Weak.Get();
+        if (!Actor || Actor==Causer || !Actor->HasAuthority() || !Actor->Definition) continue;
+        for (int32 Part=0;Part<Actor->Definition->Parts.Num();++Part)
+        {
+            const FBox Bounds=Actor->GetDamageablePartBounds(Part);
+            if (!Bounds.IsValid) continue;
+            const float Distance=FVector::Distance(Origin,Bounds.GetClosestPointTo(Origin));
+            if (Distance>Outer || (EdgeDamage>0.f && Distance>=Outer)) continue;
+            FHitResult Cover;
+            if (GetWorld()->LineTraceSingleByChannel(Cover,Origin,Bounds.GetCenter(),CoverChannel,Query) && Cover.GetActor()!=Actor)
+                continue;
+            const float Scale=Distance<=Inner ? 1.f : FMath::Clamp((Outer-Distance)/FMath::Max(Outer-Inner,UE_SMALL_NUMBER),0.f,1.f);
+            const float SplashDamage=FMath::Lerp(EdgeDamage,Damage,Scale);
+            if (SplashDamage<=0.f) continue;
+            FRetakeDestructionHit& Splash=Out.AddDefaulted_GetRef();
+            Splash.StagedActor=Actor;
+            Splash.StagedPart=Part;
+            Splash.Generation=Generation;
+            Splash.Point=Origin;
+            Splash.Direction=(Bounds.GetCenter()-Origin).GetSafeNormal();
+            Splash.Damage=SplashDamage;
+            Splash.Radius=Outer;
+            Splash.bDirectImpact=false;
+            Splash.Cause=Cause;
+        }
+    }
 }
-void URetakeDestructionSubsystem::Commit(TConstArrayView<FRetakeDestructionHit> Hits,float DamageLimit,bool bSplash)
+float URetakeDestructionSubsystem::Commit(TConstArrayView<FRetakeDestructionHit> Hits,float DamageLimit,bool bSplash,const FGuid& DamageOwner)
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(RetakeDestruction_Commit);
-    if (!FMath::IsFinite(DamageLimit) || DamageLimit<=0) return;
+    if (!FMath::IsFinite(DamageLimit) || DamageLimit<=0) return 0.f;
+    float Accepted=0.f;
     for (const auto& Hit:Hits)
     {
+        if (auto* Staged=Hit.StagedActor.Get())
+        {
+            if (Hit.Generation==Generation && StagedActors.Contains(Staged) && !Hit.Point.ContainsNaN()
+                && FMath::IsFinite(Hit.Damage) && Hit.Damage>0.f)
+                Accepted+=Staged->ApplyAcceptedDamage(Hit.StagedPart,FMath::Min(DamageLimit,Hit.Damage),
+                    Hit.bMelee,bSplash,Hit.Cause,DamageOwner);
+            continue;
+        }
         auto* A=Hit.Actor.Get();
         if (!A || A->GetGeneration()!=Generation || A->GetGeneration()!=Hit.Generation || Hit.Point.ContainsNaN() || Hit.Direction.ContainsNaN() || Hit.SurfaceNormal.ContainsNaN()
             || !FMath::IsFinite(Hit.Damage) || !FMath::IsFinite(Hit.Radius) || !FMath::IsFinite(Hit.BreakRadius) || Hit.Damage<=0 || Hit.Radius<0 || Hit.BreakRadius<0)
@@ -191,8 +269,9 @@ void URetakeDestructionSubsystem::Commit(TConstArrayView<FRetakeDestructionHit> 
         // strain is scaled only by penetration attenuation, never by damage relative to the
         // headshot/pellet ceiling, so every weapon fractures the same way.
         const float Fraction=bSplash ? FMath::Min(1.f,Hit.Damage/DamageLimit):Hit.StrainScale;
-        A->ApplyDamageAt(Hit,FMath::Min(DamageLimit,Hit.Damage),Fraction);
+        Accepted+=A->ApplyDamageAt(Hit,FMath::Min(DamageLimit,Hit.Damage),Fraction);
     }
+    return Accepted;
 }
 bool URetakeDestructionSubsystem::Occludes(const FBox& Eye,const FBox& Subject) const
 {
@@ -228,8 +307,37 @@ void URetakeDestructionSubsystem::RefreshBudget()
 }
 bool URetakeDestructionSubsystem::AcquireEffectBudget()
 {RefreshBudget();if (EffectsThisFrame>=8 || ActiveEffects.Num()>=32) {TRACE_COUNTER_INCREMENT(RetakeDestructionSuppressed);return false;}++EffectsThisFrame;return true;}
-void URetakeDestructionSubsystem::TrackEffect(UNiagaraComponent* Effect)
-{ if (Effect) ActiveEffects.Add({Effect,GetWorld()->GetTimeSeconds()+MaxEffectSeconds}); }
+void URetakeDestructionSubsystem::TrackEffect(UNiagaraComponent* Effect, float MaximumLifetimeSeconds)
+{
+    if (!Effect) return;
+    const double Lifetime = FMath::IsFinite(MaximumLifetimeSeconds) && MaximumLifetimeSeconds > 0.f
+        ? FMath::Clamp(MaximumLifetimeSeconds, 0.05f, 60.f) : MaxEffectSeconds;
+    ActiveEffects.Add({Effect, GetWorld()->GetTimeSeconds() + Lifetime});
+}
+
+bool URetakeDestructionSubsystem::BindStageImpactFires(ARetakeStagedDestructible& Owner, UNiagaraComponent& Parent,
+    const FRetakeDestructibleExitEffect& Exit)
+{
+    if (Exit.ImpactFireVariants.IsEmpty()) return Exit.MaximumImpactFires == 0;
+    UWorld* World = GetWorld();
+    if (!World || World->bIsTearingDown || World->GetNetMode() == NM_DedicatedServer || Parent.IsActive()
+        || Owner.GetWorld() != World || Parent.GetWorld() != World || !StagedActors.Contains(&Owner)) return false;
+    StageImpactReceivers.RemoveAll([](const URetakeStageImpactReceiver* Receiver) { return !Receiver->HasLiveEffects(); });
+    auto* Receiver = NewObject<URetakeStageImpactReceiver>(this);
+    if (!Receiver->Initialize(Owner, Parent, Exit)) return false;
+    StageImpactReceivers.Add(Receiver);
+    return true;
+}
+
+void URetakeDestructionSubsystem::ClearStageImpactFires(const ARetakeStagedDestructible& Owner)
+{
+    StageImpactReceivers.RemoveAll([&Owner](URetakeStageImpactReceiver* Receiver)
+    {
+        if (!Receiver->BelongsTo(Owner)) return !Receiver->HasLiveEffects();
+        Receiver->Clear();
+        return true;
+    });
+}
 bool URetakeDestructionSubsystem::AcquireSoundBudget()
 {RefreshBudget();if (SoundsThisFrame>=8) {TRACE_COUNTER_INCREMENT(RetakeDestructionSuppressed);return false;}++SoundsThisFrame;return true;}
 USoundAttenuation* URetakeDestructionSubsystem::GetSoundAttenuation(const USoundBase* Sound)

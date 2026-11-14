@@ -31,7 +31,7 @@ else:
 
 FORMAT = 'RetakeMap'
 SCHEMA = 3
-MINIMUM_SDK_CONTRACT = 39  # Paired with the fresh native SDK readable/weapon floor.
+MINIMUM_SDK_CONTRACT = 43  # Paired with the native SDK43 door-reach and weapon floor.
 PLATFORMS = {'Windows': ('Win64', False), 'LinuxServer': ('Linux', True)}
 PLUGINS = ('RetakeMapSDK', 'RetakeDestruction', 'RetakeMapContent')
 MOD = re.compile(r'RetakeMod_[A-Za-z0-9_]{1,38}')
@@ -240,14 +240,24 @@ def contract_check(kit, engine, uproject=None):
         if version == actual['contractVersion'] and previous['surface'] != new:
             raise ValueError(f'Published contract {version} changed without a version bump; keep its immutable snapshot')
         breaks, extensions = retained_surface_changes(previous['surface'], new)
+        review = next((entry for entry in reviews
+                       if entry.get('from') == previous.get('sourceHash') and entry.get('to') == actual['sourceHash']
+                       and entry.get('compatible') is True and entry.get('evidence')), None)
         if extensions:
             report.setdefault('readableDefaultExtensions', []).append({'contractVersion': version, 'extensions': extensions})
+        if breaks and review:
+            # Older maps can still be read. Match preparation rejects unavailable pickups and loadout references.
+            # This review can acknowledge removed roster entries only, with exact source and snapshot identities.
+            removed = [key for key in breaks if key.startswith('ids/weapons/')
+                       and previous['surface'][key] == 'available' and key not in new]
+            if removed and removed == review.get('removedWeaponIds'):
+                report.setdefault('reviewedWeaponIdRemovals', []).append({'contractVersion': version, 'paths': removed})
+                breaks = [key for key in breaks if key not in removed]
         if breaks:
             report['retainedContractBreaks'] = {'contractVersion': version, 'paths': breaks}
             write(Path(kit) / 'Saved/ModKit/contract-report.json', report)
             raise ValueError(f'Readable contract {version} is broken by {breaks[:5]}; raise the readable floor, never overwrite its snapshot')
-        if previous.get('sourceHash') != actual['sourceHash'] and not any(
-            r.get('from') == previous.get('sourceHash') and r.get('to') == actual['sourceHash'] and r.get('compatible') is True and r.get('evidence') for r in reviews):
+        if previous.get('sourceHash') != actual['sourceHash'] and not review:
             raise ValueError(f'Native behavior changes since contract {version} require an explicit compatibility review')
     write(Path(kit) / 'Saved/ModKit/contract-report.json', report)
     return report
@@ -523,6 +533,7 @@ def verify_export(folder):
             raise ValueError('Invalid, duplicate or self-referencing weapon-pack requirement')
         required_ids.add(identity)
     ids = set()
+    previews = set()
     for entry in manifest['maps']:
         map_id = entry.get('mapId')
         if not isinstance(map_id, str) or not re.fullmatch(re.escape(manifest['modId']) + r'\.[A-Za-z0-9_.-]+', map_id) or len(map_id) > 64 or map_id.casefold() in ids:
@@ -539,6 +550,17 @@ def verify_export(folder):
         for field in ('loadingArt', 'preview', 'minimap', 'ambience', 'visibilityBake', 'defaultLoadoutPolicy'):
             if entry.get(field, '') != '' and not object_path(entry[field]):
                 raise ValueError(f'Map {field} must reference an object inside its mod')
+        preview_hash, preview_size = entry.get('previewImageHash', ''), entry.get('previewImageSize', 0)
+        if not isinstance(preview_hash, str) or type(preview_size) is not int:
+            raise ValueError('Invalid standalone preview metadata types')
+        if preview_hash or preview_size:
+            if (manifest['sdkContractVersion'] < 62 or not entry.get('preview')
+                    or not re.fullmatch(r'[0-9a-f]{64}', preview_hash) or not 0 < preview_size <= 1024 * 1024):
+                raise ValueError('Invalid standalone preview metadata')
+            path = child(folder, f'Previews/{map_id}.png')
+            if not path.is_file() or path.stat().st_size != preview_size or digest(path) != preview_hash:
+                raise ValueError(f'Standalone preview is missing or corrupt: {map_id}')
+            previews.add(path)
         if (entry['visibility'] == 'Baked') != bool(entry.get('visibilityBake', '')):
             raise ValueError('Baked maps require their own visibility bake path; Unbaked maps must omit it')
         modes = entry.get('supportedModes')
@@ -564,8 +586,12 @@ def verify_export(folder):
     if platforms != set(PLATFORMS):
         raise ValueError('Both platform compatibility records are required')
     allowed = {'manifest.json', manifest['modId'] + '.uplugin', *PLATFORMS}
+    if previews:
+        allowed.add('Previews')
+        if set((folder / 'Previews').iterdir()) != previews:
+            raise ValueError('Undeclared files in Previews')
     if {p.name for p in folder.iterdir()} != allowed:
-        raise ValueError('Undeclared loose mod files or directories; exports contain only manifest, descriptor and platform artifacts')
+        raise ValueError('Undeclared loose mod files or directories')
     descriptor_path = folder / (manifest['modId'] + '.uplugin')
     validate_descriptor(descriptor_path, expected_kind='weapons' if weapons else 'map')
     if read(descriptor_path).get('ExplicitlyLoaded') is not True:
@@ -748,7 +774,7 @@ def export(kit, engine, mod, revision, modes='auto', candidate=False):
     return final
 
 
-def recook(kit, engine, archive_path, revision, candidate=False):
+def restore_source(kit, archive_path):
     kit = Path(kit).resolve()
     with zipfile.ZipFile(archive_path) as archive:
         if archive.getinfo('recovery.json').file_size > 8 * 1024 * 1024:
@@ -798,6 +824,13 @@ def recook(kit, engine, archive_path, revision, candidate=False):
             os.rename(temporary, destination)
         finally:
             remove_generated(kit, temporary)
+    return destination
+
+
+def recook(kit, engine, archive_path, revision, candidate=False):
+    kit = Path(kit).resolve()
+    destination = restore_source(kit, archive_path)
+    mod = destination.name
     # Use this kit's CURRENT qualified SDK/config. Historical metadata is evidence, not permission to overwrite the kit.
     kind = read(destination / f'{mod}.uplugin').get('RetakeModKind', 'map')
     try:
@@ -848,7 +881,6 @@ def compatibility_status(kit):
     return {'sdkCurrent': sdk_source_hash(kit) == sdk.get('sourceHash'), 'platforms': platforms,
             'candidateOnly': candidate,
             'compatibilityConfigured': all(row['configured'] and (candidate or row['qualified']) for row in platforms)}
-
 
 
 def draft_status(kit, engine, mod, report=None):

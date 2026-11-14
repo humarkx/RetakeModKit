@@ -1,8 +1,8 @@
 {
-  "contractVersion": 40,
+  "contractVersion": 62,
   "delivery": "source",
   "format": 1,
-  "oldestReadableContract": 39,
+  "oldestReadableContract": 43,
   "plugins": [
     "RetakeMapSDK",
     "RetakeDestruction",
@@ -14,11 +14,11 @@
   },
   "schemaVersion": 3,
   "shipped": {
-    "release": "0.1.0-alpha.36",
+    "release": "0.1.0-alpha.43",
     "targets": [
       {
-        "baseRegistryHash": "3e1647c2e6e8c906efa81ca7ca6b9dd5f50fd6e72a2f9e9f8fb2795191d3d874",
-        "consumerRecord": "fae031beeb202ad206eaa0b1bc08b2513989d23dff2ce78cfb37cced13f6b37d",
+        "baseRegistryHash": "cc1bc790fc820d5e1c274d84c1d1e65f010874730de33c7348047f6d86041224",
+        "consumerRecord": "f1c0b6cf8df8698867494f8e366fd81848577f2c70249a518f9597cddc805481",
         "name": "Windows",
         "packages": [
           "/ACLPlugin/ACLAnimBoneCompressionSettings",
@@ -533,6 +533,7 @@
           "CsvMetrics",
           "CurveExpression",
           "CustomMeshComponent",
+          "CustomizableObject",
           "DataRegistry",
           "DataflowCore",
           "DataflowEngine",
@@ -696,6 +697,7 @@
           "MovieSceneCapture",
           "MovieSceneMixedControlRig",
           "MovieSceneTracks",
+          "MutableRuntime",
           "NNE",
           "NNEDenoiser",
           "NNERuntimeBasicCpu",
@@ -745,6 +747,8 @@
           "RenderDocPlugin",
           "Renderer",
           "Retake",
+          "RetakeAntiCheat",
+          "RetakeAntiCheatEAC",
           "RetakeDestruction",
           "RetakeMapSDK",
           "RewindDebuggerRuntime",
@@ -764,6 +768,7 @@
           "ServerAdminRcon",
           "SessionMessages",
           "SignificanceManager",
+          "SkeletalMerging",
           "SkeletalMeshDescription",
           "Slate",
           "SlateBaseRenderer",
@@ -833,8 +838,8 @@
         ]
       },
       {
-        "baseRegistryHash": "b13e9ffa3411a3bd9b0c2bcfb65771cedf58b4ea3a8ea43e6d7e9350481e1990",
-        "consumerRecord": "7d464772fce8894b43c6b01d9105ba8351cd09220426ccf9e2dfb2b80eae80a0",
+        "baseRegistryHash": "833a1dc99604a10416eafceaa93b6976ead73ec2d38bff5ece2aab3ea5cdc6ca",
+        "consumerRecord": "f595445e2d640ac2281e43b3b6a614ddf08a75363fb64732b4d284507bff4b4a",
         "name": "LinuxServer",
         "packages": [
           "/ACLPlugin/ACLAnimBoneCompressionSettings",
@@ -1324,6 +1329,7 @@
           "CsvMetrics",
           "CurveExpression",
           "CustomMeshComponent",
+          "CustomizableObject",
           "DataRegistry",
           "DataflowCore",
           "DataflowEngine",
@@ -1486,6 +1492,7 @@
           "MovieSceneCapture",
           "MovieSceneMixedControlRig",
           "MovieSceneTracks",
+          "MutableRuntime",
           "NNE",
           "NNERuntimeBasicCpu",
           "NNERuntimeORT",
@@ -1532,6 +1539,8 @@
           "RenderDocPlugin",
           "Renderer",
           "Retake",
+          "RetakeAntiCheat",
+          "RetakeAntiCheatEAC",
           "RetakeDestruction",
           "RetakeMapSDK",
           "RewindDebuggerRuntime",
@@ -1551,6 +1560,7 @@
           "ServerAdminRcon",
           "SessionMessages",
           "SignificanceManager",
+          "SkeletalMerging",
           "SkeletalMeshDescription",
           "Slate",
           "SlateCore",
@@ -1618,5 +1628,5 @@
       }
     ]
   },
-  "sourceHash": "3299f4841f4f21e89f96e15d2210dc5c564249f8929f5ff1bfc0f7df571c14bf"
+  "sourceHash": "dcc80d3631e22dc3e889d735662e154f93812e9a72604e1b980efaebde1ea83b"
 }

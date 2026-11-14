@@ -1,0 +1,179 @@
+{
+  "contractVersion": 61,
+  "evidence": [
+    "RetakeEditor and ShaderCompileWorker completed and the native contract capture contains 53,098 entries.",
+    "Only the two retired base pickup IDs differ from SDK60. Tagged serialization, enum values, defaults, wire encoding and retained IDs are unchanged.",
+    "GameMode resolves mod pickup IDs against the loaded session catalogue before admission. The existing loadout resolver validates selected policy IDs and the SDK exporter refuses removed base pickup IDs.",
+    "The native base hit rig gate certified revision 280 without either retired rifle. ProMod has separate qualified AK weapon IDs."
+  ],
+  "format": 1,
+  "oldestReadableContract": 43,
+  "pending": [
+    "New Windows and LinuxServer builds, old-package admission and user gameplay acceptance."
+  ],
+  "retainedContracts": [
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 43,
+      "newEntries": 334,
+      "sourceHash": "1649fba7389cf977ebad152657393b80985ba0ac598508dae1fd245fc95e8934"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 44,
+      "newEntries": 306,
+      "sourceHash": "4122d83097758c4ab3ab455801bba752242ac3eff9f28d88f7f5435db37e3fde"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 45,
+      "newEntries": 287,
+      "sourceHash": "a76e620193d64119b1603d45a3a50e8a2573c40d34a106566923bb6b1f10e75b"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 46,
+      "newEntries": 271,
+      "sourceHash": "344c082a58d55053872202617f29353e3a287b0bf8fb89b0d651b923784f6c3b"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 47,
+      "newEntries": 245,
+      "sourceHash": "f6959defff4bccc182a28f3e65192888f56bcb6cf96790a94cd5b1386b60ed2d"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 48,
+      "newEntries": 219,
+      "sourceHash": "4d30d0586b0afb3298e84d0a3fe4d80faee32029fa7ac0b50a3e92f135cbc91a"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 49,
+      "newEntries": 197,
+      "sourceHash": "177b6aa14f3ff96a4e2e4a11b67ef76827eefabe9a2d35e3bbf4b42e91e8fc3c"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 50,
+      "newEntries": 193,
+      "sourceHash": "0923596a90c32c00b75b5cf7429a1ad5587802be658808e2e0b6ca2426fcc216"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 51,
+      "newEntries": 163,
+      "sourceHash": "fd7394edd8515ee379e9d87c1bdc27fdfbd2bbc3dd68d395da00640f449aec0b"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 52,
+      "newEntries": 153,
+      "sourceHash": "fc3ea1879ce76e103a7d34f3330ed3b826e9255196981b1f4c9fcb3b8be27adb"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 53,
+      "newEntries": 149,
+      "sourceHash": "5a36d0c3ed4608f50cd22adfc7021b1c70f597f0dd75c58f70c5c3777f186ac5"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 54,
+      "newEntries": 108,
+      "sourceHash": "543e5d9157c693ddf9c9799d499562bb119756f68c650fe50b1ffa7e4c28e611"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 55,
+      "newEntries": 96,
+      "sourceHash": "9ef7347d45e523605ea4c428dc90ff3ca3c032b4194a25a51811fb23f4e05cb4"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 56,
+      "newEntries": 92,
+      "sourceHash": "994ebde36e9fa6ed0796e04257109d9f614f87541f34228a4807f25d6d4c1e9f"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 57,
+      "newEntries": 72,
+      "sourceHash": "0c0394c4f0f575998c899f7dd36aad7143701b379f3a4747662065fc69264e61"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 58,
+      "newEntries": 30,
+      "sourceHash": "aca2d18393cf5dac4818b0d958ddeb4386db9cb8374cbadec8f7cd52b4fc42a6"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 59,
+      "newEntries": 26,
+      "sourceHash": "b4aefd675536da44d68e01bc6b8f47e39bb0fc85e88c11949175a0d2af8eeb19"
+    },
+    {
+      "changedEntries": [
+        "ids/weapons/ak47",
+        "ids/weapons/ak74u"
+      ],
+      "contractVersion": 60,
+      "newEntries": 0,
+      "sourceHash": "d598417e7a82602d6cfeed928ea63010c58346adbecbfc0a36b538b3284284cc"
+    }
+  ],
+  "sourceHash": "003d8beb34e43a8a38f302a99a44531afc9f743795ae42768084de88d985503a"
+}

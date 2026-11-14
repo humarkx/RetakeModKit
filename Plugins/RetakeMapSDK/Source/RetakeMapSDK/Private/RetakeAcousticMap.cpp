@@ -19,6 +19,7 @@
 #include "Serialization/MemoryWriter.h"
 #include "UObject/Package.h"
 #if WITH_EDITOR
+#include "CollisionShape.h"
 #include "StaticMeshCompiler.h"
 #endif
 
@@ -204,6 +205,29 @@ bool ARetakeAcousticMap::Gather(TArray<FRetakeAcousticRegionData>& Regions, TArr
                 if (UStaticMesh* Mesh = Component->GetStaticMesh(); Mesh && Mesh->IsCompiling()) Compiling.Add(Mesh);
         }
         if (!Compiling.IsEmpty()) FStaticMeshCompilingManager::Get().FinishCompilation(Compiling.Array());
+    }
+
+    // A current signature proves that the bake matches the authoring, but a marker
+    // inside structure would still cut off any runtime route that uses it.
+    const UWorld* World = GetWorld();
+    if (World->WorldType == EWorldType::Editor && World->bIsWorldInitialized && World->GetPhysicsScene())
+    {
+        FCollisionQueryParams Query(SCENE_QUERY_STAT(RetakeAcousticConnectionClearance), false);
+        const FCollisionShape Clearance = FCollisionShape::MakeSphere(1.f);
+        for (const ARetakeAcousticConnection* Actor : ConnectionActors)
+        {
+            // The door's own leaf may occupy the opening; structure around the leaf still counts.
+            FCollisionQueryParams ConnectionQuery = Query;
+            if (Actor->Door) ConnectionQuery.AddIgnoredActor(Actor->Door.Get());
+            const FVector Position = Actor->GetActorLocation();
+            if (World->SweepTestByChannel(Position, Position + FVector(0, 0, .25), FQuat::Identity,
+                ECC_GameTraceChannel7, Clearance, ConnectionQuery))
+            {
+                Error = FString::Printf(TEXT("Acoustic connection '%ls' touches acoustic collision. Move its marker into the opening."),
+                    *Actor->ConnectionId.ToString());
+                return false;
+            }
+        }
     }
 #endif
     TArray<UStaticMeshComponent*> Structure;

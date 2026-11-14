@@ -45,9 +45,15 @@ namespace RetakeWeaponPoseBaking
         TArray<int32> MeshIndices;
         TArray<FBoneIndexType> Required;
         FBoneContainer Bones;
+        /** Every package the bake read (staleness: any byte change here needs a re-bake). */
         TSet<FName> Sources;
+        /** The subset whose bytes the runtime samples live after the bake (carry sequences, the locomotion clip set, the unarmed
+         *  aim offset, traversal montages), so they also form the cooked identity. A baked-only source is not here. */
+        TSet<FName> RuntimeSources;
         bool Initialize(const USkeletalMesh& Reference,TConstArrayView<FRetakePoseBone> Catalogue,FString& Error);
         void Read(const UObject* Source);
+        /** Read, and record the source as sampled at runtime too. */
+        void ReadRuntime(const UObject* Source);
     };
 
     /** Preserves the established raw/runtime sampling policy; only used during game-thread authoring. */
@@ -69,6 +75,8 @@ namespace RetakeWeaponPoseBaking
         ERetakeHitRigLayer Kind,float Length,float SampleRate,TArray<FTransform3f>& Out);
     RETAKEMAPSDK_API bool BakeTrack(FContext& Context,const UAnimMontage* Montage,const UAnimSequence* Sequence,
         FRetakeHitRigTrack& Track,float MinimumSampleRate=120.f);
+    RETAKEMAPSDK_API bool BakeGrenadeBodyTracks(FContext& Context,TConstArrayView<FRetakeGrenadeBodyAnimation> Animations,
+        TArray<FRetakeHitRigGrenadeBodyTrack>& Out,int64& TransformCount,FString& Error);
     RETAKEMAPSDK_API bool BakeHold(FContext& Context,const FPlayerAnims& Anims,const FRetakeThirdPersonAimPose& Aim,
         const UBlendSpace* StandLean,const UBlendSpace* CrouchLean,const UBlendSpace* StandMovingLean,const UBlendSpace* CrouchMovingLean,
         float LeanStrength,FName ProfileId,const FCompactPose* StandLower,const FCompactPose* CrouchLower,

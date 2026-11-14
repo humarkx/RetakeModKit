@@ -10,7 +10,10 @@ class UActorComponent;
 class USceneComponent;
 class UNiagaraSystem;
 class UAnimSequence;
+class UTexture2D;
 class URetakeWeaponPoseBasis;
+class UWorld;
+struct FRetakeModMap;
 
 /** Editor scripting for Map Kit tooling: what a creator does by hand in the editor, for scripts that run without one. */
 UCLASS()
@@ -18,6 +21,15 @@ class RETAKEMAPSDKEDITOR_API URetakeMapSDKEditorLibrary : public UBlueprintFunct
 {
     GENERATED_BODY()
 public:
+    /** Builds metadata for the currently loaded source map using the exporter's mode/presentation checks.
+     * Does not load another world, modify assets, or manufacture an installed/exported revision. */
+    static bool BuildMapPreviewMetadata(const UWorld& World, FRetakeModMap& OutMap, FString& OutError);
+
+    /** Replace optional Interchange metadata with native import records on an owned texture.
+     * Preserves source filenames and texture data. Returns an error or empty string. Caller saves the asset. */
+    UFUNCTION(BlueprintCallable, Category="Retake|Mods")
+    static FString NormalizeTextureImportMetadata(UTexture2D* Texture, const FString& OwnerModId);
+
     /** Exact native identity of the declared shared body; empty if invalid. Does not modify assets. */
     UFUNCTION(BlueprintCallable, Category="Retake|Mods|Weapons")
     static FString GetWeaponAuthoringBodyIdentity(URetakeWeaponPoseBasis* Basis);
@@ -36,9 +48,22 @@ public:
     UFUNCTION(BlueprintCallable, Category="Retake|Mods", meta=(DeterminesOutputType="Class"))
     static UActorComponent* AddInstanceComponent(AActor* Actor, TSubclassOf<UActorComponent> Class, FName Name, USceneComponent* Parent);
 
+    /**
+     * Gives every pawn-blocking static mesh of a traversal obstacle actor a simple box fitted to the mesh bounds and
+     * Use Simple and Complex, so pawn sweeps land on a flat top at the ledge line while shots keep hitting the triangles.
+     * Only meshes owned by OwnerModId without simple collision change; the result lists each mesh and the obstacle's
+     * remaining configuration error, or the reason nothing changed.
+     */
+    UFUNCTION(BlueprintCallable, Category="Retake|Mods")
+    static FString RepairTraversalCollision(AActor* Actor, const FString& OwnerModId);
+
     /** Raw frame-index pose hash and timing diagnostics. Does not evaluate gameplay, modify or save assets. */
     UFUNCTION(BlueprintCallable, Category="Retake|Mods")
     static FString InspectAnimationFrames(UAnimSequence* Animation);
+
+    /** Finish any queued compilation for an owned animation before editing its source keys or sample rate. Does not save. */
+    UFUNCTION(BlueprintCallable, Category="Retake|Mods")
+    static FString FinishAnimationCompilation(UAnimSequence* Animation, const FString& OwnerModId);
 
     /** Change sample timing on a saved mod-owned raw clip without moving frame keys. Rejects timed events/curves/attributes/additive clips; does not save. */
     UFUNCTION(BlueprintCallable, Category="Retake|Mods")

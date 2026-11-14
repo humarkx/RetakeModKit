@@ -320,6 +320,10 @@ struct RETAKEMAPSDK_API FRetakeThirdPersonAimPose
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation|Aim", meta=(ClampMin="0", ClampMax="180", Units="deg")) float MaxYawDegrees = 90.f;
 };
 
+/** Third-person pose selected when a magazine reload starts. */
+UENUM()
+enum class ERetakeMagazineReloadPose : uint8 { Default = 0, CrouchedIdle = 1, CrouchedMoving = 2 };
+
 USTRUCT(BlueprintType)
 struct RETAKEMAPSDK_API FMontageData
 {
@@ -671,15 +675,55 @@ struct RETAKEMAPSDK_API FRetakeWeaponReloadSettings
     /** Seconds before insertion completion at which ammo is granted. Zero preserves cycle-end grants; a lead equal to insertion duration grants at its start. Animation still completes. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Reload", meta=(ClampMin="0")) float PerRoundCommitLeadSeconds = 0.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Reload", meta=(ClampMin="0")) float PerRoundEndSeconds = 0;
+    /** Optional magazine reload timing when the action starts empty. Zero duration uses the regular schedule. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Reload", meta=(ClampMin="0")) float EmptyDurationSeconds = 0.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Reload", meta=(ClampMin="0")) float EmptyCommitSeconds = 0.f;
+    /** Rounds granted during the opening animation. Zero combines the opening with the first insertion cycle. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Reload", meta=(ClampMin="0")) int32 PerRoundStartRounds = 0;
+    /** Seconds from the start of the opening animation to its ammo grant. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Reload", meta=(ClampMin="0")) float PerRoundStartCommitSeconds = 0.f;
+
+    float MagazineDuration(bool bEmpty) const { return bEmpty && EmptyDurationSeconds>0.f ? EmptyDurationSeconds : DurationSeconds; }
+    float MagazineCommit(bool bEmpty) const { return bEmpty && EmptyDurationSeconds>0.f ? EmptyCommitSeconds : CommitSeconds; }
+    bool HasPerRoundStartGrant() const { return PerRoundStartRounds > 0; }
+    bool HasValidPerRoundStartGrant() const
+    {
+        if (PerRoundStartRounds == 0) return PerRoundStartCommitSeconds == 0.f;
+        return PerRoundStartRounds > 0 && Policy == ERetakeReloadPolicy::PerRound
+            && FMath::IsFinite(PerRoundStartSeconds) && PerRoundStartSeconds > 0.f
+            && FMath::IsFinite(PerRoundStartCommitSeconds) && PerRoundStartCommitSeconds >= 0.f
+            && PerRoundStartCommitSeconds <= PerRoundStartSeconds;
+    }
 };
 
-/** One cosmetic reload sound on the authoritative phase clock; never grants ammunition. */
+/** A manual bolt or pump cycle after the normal firing recovery. Zero duration disables it. */
+USTRUCT(BlueprintType)
+struct RETAKEMAPSDK_API FRetakeWeaponRechamberSettings
+{
+    GENERATED_BODY()
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Actions", meta=(ClampMin="0", ClampMax="10", Units="s")) float DurationSeconds = 0.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Actions", meta=(ClampMin="0", ClampMax="10", Units="s")) float EjectSeconds = 0.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Aiming") bool bAllowAim = false;
+
+    bool IsEnabled() const { return DurationSeconds > 0.f; }
+    bool IsValid() const
+    {
+        if (!FMath::IsFinite(DurationSeconds) || !FMath::IsFinite(EjectSeconds)) return false;
+        if (DurationSeconds == 0.f) return EjectSeconds == 0.f && !bAllowAim;
+        return DurationSeconds <= 10.f && EjectSeconds >= .001f && EjectSeconds <= DurationSeconds;
+    }
+};
+
+/** One cosmetic sound on an accepted action's phase clock. */
 USTRUCT(BlueprintType)
 struct RETAKEMAPSDK_API FRetakeWeaponTimedAudioCue
 {
     GENERATED_BODY()
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="0", Units="s")) float Seconds = 0.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Game")) TSoftObjectPtr<URetakeAudioCueDefinition> Cue;
+    /** Delay after the trigger. Once triggered, the recording can start after the action phase ends. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(ClampMin="0", ClampMax="2", Units="s")) float PlaybackDelaySeconds = 0.f;
+    static constexpr float MaximumPlaybackDelaySeconds=2.f;
 };
 
 /** Opt-in reload audio schedule. Empty/disabled retains the existing action/commit cue behavior. */
@@ -693,9 +737,43 @@ struct RETAKEMAPSDK_API FRetakeWeaponReloadAudio
     /** Repeated per-round insertion, timed from its stage start rather than its ammo grant. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeWeaponTimedAudioCue> Insert;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeWeaponTimedAudioCue> End;
+    /** Optional positional timeline for an empty magazine; defaults to Start. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeWeaponTimedAudioCue> EmptyStart;
+    /** Owner timeline for the magazine or opening phase. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeWeaponTimedAudioCue> OwnerStart;
+    /** Optional local first-person empty timeline; defaults to OwnerStart when provided. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeWeaponTimedAudioCue> OwnerEmptyStart;
+    /** Every phase uses its own owner timeline, including explicitly silent phases. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") bool bUseDistinctOwnerTimelines=false;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeWeaponTimedAudioCue> OwnerInsert;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio") TArray<FRetakeWeaponTimedAudioCue> OwnerEnd;
     static constexpr int32 MaximumEventsPerPhase = 16;
-    TConstArrayView<FRetakeWeaponTimedAudioCue> Events(int32 Stage) const
-    { return Stage==0 ? MakeArrayView(Start) : Stage==1 ? MakeArrayView(Insert) : Stage==2 ? MakeArrayView(End) : TConstArrayView<FRetakeWeaponTimedAudioCue>(); }
+    TConstArrayView<FRetakeWeaponTimedAudioCue> Events(int32 Stage, bool bOwner=false, bool bEmpty=false) const
+    {
+        if (bOwner && bUseDistinctOwnerTimelines)
+        {
+            if (Stage==0) return MakeArrayView(bEmpty ? OwnerEmptyStart : OwnerStart);
+            if (Stage==1) return MakeArrayView(OwnerInsert);
+            if (Stage==2) return MakeArrayView(OwnerEnd);
+            return {};
+        }
+        if (Stage==1) return MakeArrayView(Insert);
+        if (Stage==2) return MakeArrayView(End);
+        if (Stage!=0) return {};
+        if (bOwner && bEmpty && !OwnerEmptyStart.IsEmpty()) return MakeArrayView(OwnerEmptyStart);
+        if (bOwner && !OwnerStart.IsEmpty()) return MakeArrayView(OwnerStart);
+        return MakeArrayView(bEmpty && !EmptyStart.IsEmpty() ? EmptyStart : Start);
+    }
+    bool HasEvents() const
+    {
+        return !Start.IsEmpty() || !Insert.IsEmpty() || !End.IsEmpty() || !EmptyStart.IsEmpty()
+            || !OwnerStart.IsEmpty() || !OwnerEmptyStart.IsEmpty() || !OwnerInsert.IsEmpty() || !OwnerEnd.IsEmpty();
+    }
+    void ForEachEvent(TFunctionRef<void(const FRetakeWeaponTimedAudioCue&)> Visit) const
+    {
+        for (const auto* List : {&Start, &Insert, &End, &EmptyStart, &OwnerStart, &OwnerEmptyStart, &OwnerInsert, &OwnerEnd})
+            for (const auto& Event : *List) Visit(Event);
+    }
 };
 
 USTRUCT(BlueprintType)
@@ -704,6 +782,9 @@ struct RETAKEMAPSDK_API FRetakeWeaponEquipSettings
     GENERATED_BODY()
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Equip", meta=(ClampMin="0")) float AttachSeconds = 0;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Equip", meta=(ClampMin="0")) float DurationSeconds = 0;
+    /** Optional duration for the first loaded draw after acquisition. Zero keeps the regular draw. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Equip", meta=(ClampMin="0", Units="s")) float FirstDurationSeconds = 0.f;
+    float Duration(bool bFirst) const { return bFirst && FirstDurationSeconds>0.f ? FirstDurationSeconds : DurationSeconds; }
 };
 
 USTRUCT(BlueprintType)
@@ -781,6 +862,7 @@ struct RETAKEMAPSDK_API FRetakeWeaponGunKickSettings
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Recoil", meta=(ClampMin="0", ClampMax="90")) float MaxYawDegrees = 0;
     /** WEAPON-11 BurstKickScale: the per-shot velocity endpoints times Scale; integration and caps unchanged. */
     FRetakeWeaponGunKickSettings WithImpulseScale(float Scale) const;
+    bool IsValid() const;
 };
 
 /** Optional periodic rocket steering/deceleration followed by a falling phase. */
@@ -877,6 +959,32 @@ struct RETAKEMAPSDK_API FRetakeGrenadeAnimationSet
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Grenades", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> ReleaseShort;
 };
 
+/** Optional third-person overrides selected from recorded stance and movement. */
+UENUM(BlueprintType)
+enum class ERetakeGrenadeBodyPose : uint8
+{
+    CrouchedPrepare,
+    CrouchedMovingRelease,
+    StandingIdleRelease,
+    CrouchedIdleRelease,
+    Count UMETA(Hidden)
+};
+
+inline bool IsFullBodyGrenadePose(ERetakeGrenadeBodyPose Pose)
+{
+    return Pose==ERetakeGrenadeBodyPose::StandingIdleRelease || Pose==ERetakeGrenadeBodyPose::CrouchedIdleRelease;
+}
+
+USTRUCT(BlueprintType)
+struct RETAKEMAPSDK_API FRetakeGrenadeBodyAnimation
+{
+    GENERATED_BODY()
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Grenades") ERetakeGrenadeBodyPose Pose=ERetakeGrenadeBodyPose::CrouchedPrepare;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Grenades") TSoftObjectPtr<UAnimSequence> Long;
+    /** Unset reuses Long for the short throw. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Grenades") TSoftObjectPtr<UAnimSequence> Short;
+};
+
 /** One paired bash motion. The accepted shot selects the same bounded entry for both views and the recorded hit rig. */
 USTRUCT(BlueprintType)
 struct RETAKEMAPSDK_API FRetakeBashAnimationVariant
@@ -928,6 +1036,8 @@ struct RETAKEMAPSDK_API FRetakeWeaponPresentationSettings
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Meshes") TArray<FName> DefaultHiddenMaterialSlots;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Grenades") FRetakeGrenadeAnimationSet FirstPersonGrenade;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Grenades") FRetakeGrenadeAnimationSet ThirdPersonGrenade;
+    /** Idle releases own the body pose. Moving releases and preparation preserve the locomotion beneath the upper body. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Grenades") TArray<FRetakeGrenadeBodyAnimation> ThirdPersonGrenadeBodyAnimations;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Weapons|Grenades") FRetakeGrenadeAnimationSet WeaponGrenade;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Presentation", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeWeaponAnimationProfile> CharacterProfile;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Presentation", meta=(AssetBundles="Client")) TSoftObjectPtr<USkeletalMesh> WorldMesh;
@@ -974,6 +1084,9 @@ struct RETAKEMAPSDK_API FRetakeWeaponPresentationSettings
      *  third person (the pistols' first-person set, Docs/Content/Weapons/PistolFirstPersonSet.md). Empty plays
      *  ReloadAnimation in both views. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> FirstPersonReloadAnimation;
+    /** Optional weapon-mesh clips for a magazine reload that began empty. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> EmptyReloadAnimation;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> FirstPersonEmptyReloadAnimation;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> FirstPersonBashAnimation;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> ThirdPersonBashAnimation;
     /** Optional paired alternatives, including index zero. Empty retains the legacy single clip and action timings. */
@@ -986,10 +1099,14 @@ struct RETAKEMAPSDK_API FRetakeWeaponPresentationSettings
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> ThirdPersonReloadInsert;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> ThirdPersonReloadEnd;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeAudioCueDefinition> PrimaryFireCue;
+    /** Optional primary shot cue for the locally controlled shooter. Other listeners still receive PrimaryFireCue. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeAudioCueDefinition> OwnerPrimaryFireCue;
     /** Optional mechanical cycle sound. Triggered only by Retake Weapon Rechamber in FireAnimation. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<USoundBase> RechamberSound;
     /** Short-range spatial policy for remote bolt/foley audio; independent of the gunshot's range. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<USoundAttenuation> RechamberAttenuation;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> RechamberAnimation;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Animation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> AimedRechamberAnimation;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeAudioCueDefinition> SecondaryFireCue;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeAudioCueDefinition> DryFireCue;
     /**
@@ -1003,6 +1120,9 @@ struct RETAKEMAPSDK_API FRetakeWeaponPresentationSettings
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeAudioCueDefinition> ReloadInsertCue;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeAudioCueDefinition> ReloadEndCue;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeAudioCueDefinition> EquipCue;
+    /** Owner sounds for the first loaded draw. Offsets start when the weapon attaches. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Game")) TArray<FRetakeWeaponTimedAudioCue> FirstEquipAudio;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Presentation", meta=(AssetBundles="Client")) TSoftObjectPtr<UAnimSequence> FirstPersonFirstEquipAnimation;
     /** Played when the weapon is put away: on a switch at its start (the draw sound then follows the attach), and on a holster. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeAudioCueDefinition> HolsterCue;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Audio", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeAudioCueDefinition> PinCue;
@@ -1019,6 +1139,8 @@ struct RETAKEMAPSDK_API FRetakeWeaponPresentationSettings
     /** Cosmetic muzzle-to-impact streak for hitscan/pellet shots; null draws none. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Effects", meta=(AssetBundles="Client")) TSoftObjectPtr<URetakeTracerProfile> Tracer;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Effects", meta=(AssetBundles="Client")) TSoftObjectPtr<UNiagaraSystem> ShellEjectEffect;
+    /** Optional effect for the active first-person view. Uses ShellEjectEffect when unset. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Effects", meta=(AssetBundles="Client")) TSoftObjectPtr<UNiagaraSystem> FirstPersonShellEjectEffect;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Effects", meta=(AssetBundles="Client")) TSoftObjectPtr<UStaticMesh> ShellEjectMesh;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Effects") FName EjectSocket = TEXT("tag_eject");
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Retake|Effects", meta=(AssetBundles="Client")) TSoftObjectPtr<UNiagaraSystem> ExplosionEffect;

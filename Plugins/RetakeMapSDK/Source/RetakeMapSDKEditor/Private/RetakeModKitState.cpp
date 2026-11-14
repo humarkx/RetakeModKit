@@ -67,8 +67,10 @@ FRetakeModKitState::FRetakeModKitState()
     const auto ToolSetup=ReadJSON(Kit()/TEXT("Saved/ModKit/setup.json"));
     const TSharedPtr<FJsonObject>* SetupEngine=nullptr;
     const FString EditorBuildId=TextField(ReadJSON(FString(FPlatformProcess::GetModulesDirectory())/TEXT("UnrealEditor.modules")),TEXT("BuildId"));
+    const FString SdkSourceHash=TextField(ReadJSON(Kit()/TEXT("SDK.lock.json")),TEXT("sourceHash"));
     ToolsReady=Flag(ToolSetup,TEXT("completed"))&&!EditorBuildId.IsEmpty()
-        &&ToolSetup->TryGetObjectField(TEXT("engine"),SetupEngine)&&TextField(*SetupEngine,TEXT("buildId"))==EditorBuildId;
+        &&ToolSetup->TryGetObjectField(TEXT("engine"),SetupEngine)&&TextField(*SetupEngine,TEXT("buildId"))==EditorBuildId
+        &&!SdkSourceHash.IsEmpty()&&TextField(ToolSetup,TEXT("sdkSourceHash"))==SdkSourceHash;
     Revision = TEXT("r") + FDateTime::UtcNow().ToString(TEXT("%Y%m%d%H%M%S"));
     if (const TSharedPtr<FJsonObject> Saved = ReadJSON(Preferences()))
     { ModId = TextField(Saved, TEXT("mod")); GameExe = TextField(Saved, TEXT("game"));

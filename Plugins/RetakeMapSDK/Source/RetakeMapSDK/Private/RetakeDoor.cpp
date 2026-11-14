@@ -4,7 +4,7 @@
 #include "RetakeMapElementSubsystem.h"
 
 #include "Components/SceneComponent.h"
-#include "Components/SphereComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "CollisionQueryParams.h"
 #include "Curves/CurveFloat.h"
@@ -74,13 +74,13 @@ ARetakeDoor::ARetakeDoor()
 	DoorMesh->SetCollisionProfileName(UCollisionProfile::BlockAllDynamic_ProfileName);
 	DoorMesh->SetGenerateOverlapEvents(false);
 	DoorMesh->SetMobility(EComponentMobility::Movable);
-	InteractionRange = CreateDefaultSubobject<USphereComponent>(TEXT("InteractionRange"));
-	InteractionRange->SetupAttachment(DoorPivot);
-	InteractionRange->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	InteractionRange->SetGenerateOverlapEvents(false);
-	InteractionRange->SetCanEverAffectNavigation(false);
-	InteractionRange->SetHiddenInGame(true);
-	InteractionRange->ShapeColor = FColor(80, 200, 255);
+	InteractionReach = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionReach"));
+	InteractionReach->SetupAttachment(DoorPivot);
+	InteractionReach->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InteractionReach->SetGenerateOverlapEvents(false);
+	InteractionReach->SetCanEverAffectNavigation(false);
+	InteractionReach->SetHiddenInGame(true);
+	InteractionReach->ShapeColor = FColor(80, 200, 255);
 }
 
 void ARetakeDoor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -144,10 +144,14 @@ void ARetakeDoor::ApplyDoorSize() const
 	if (bOriginAtBottom) Offset.Z = -Local.Min.Z * Scale.Z;
 	if (HingeEdge != ERetakeDoorHinge::MeshOrigin || bOriginAtBottom) DoorMesh->SetRelativeLocation(Offset);
 	DoorMesh->UpdateBounds();
-	// The range is measured from the leaf centre, so the visualizer follows it (and swings with the pivot).
-	InteractionRange->SetWorldLocation(DoorMesh->Bounds.Origin);
-	InteractionRange->SetSphereRadius(InteractionDistance, false);
-	InteractionRange->SetHiddenInGame(!(bShowInteractionRange || CVarRetakeDoorsDebug.GetValueOnGameThread() != 0));
+	// Reach is measured to the leaf's box, so the visualizer is that box grown by the reach (and swings with the pivot).
+	// Its extent is in world centimetres, so it carries no scale of its own.
+	const FTransform Leaf = DoorMesh->GetComponentTransform();
+	const FBox LeafBox = Mesh->GetBoundingBox();
+	InteractionReach->SetWorldLocationAndRotation(Leaf.TransformPosition(LeafBox.GetCenter()), Leaf.GetRotation());
+	InteractionReach->SetWorldScale3D(FVector::OneVector);
+	InteractionReach->SetBoxExtent(LeafBox.GetExtent() * Leaf.GetScale3D().GetAbs() + FVector(InteractionDistance), false);
+	InteractionReach->SetHiddenInGame(!(bShowInteractionRange || CVarRetakeDoorsDebug.GetValueOnGameThread() != 0));
 }
 
 void ARetakeDoor::BeginPlay()
@@ -182,6 +186,18 @@ FVector ARetakeDoor::GetHingeLocation() const { return DoorPivot->GetComponentLo
 FVector ARetakeDoor::GetInteractionLocation() const
 {
 	return DoorMesh && DoorMesh->GetStaticMesh() ? DoorMesh->Bounds.Origin : GetHingeLocation();
+}
+
+FVector ARetakeDoor::GetClosestLeafPoint(const FVector& Location) const
+{
+	const UStaticMesh* Mesh = DoorMesh ? DoorMesh->GetStaticMesh() : nullptr;
+	if (!Mesh) return GetHingeLocation();
+	// Clamping in the leaf's own space is exact for its box: the mesh scale runs along the box's axes.
+	const FTransform Leaf = DoorMesh->GetComponentTransform();
+	const FBox LeafBox = Mesh->GetBoundingBox();
+	const FVector Local = Leaf.InverseTransformPosition(Location);
+	return Leaf.TransformPosition(FVector(FMath::Clamp(Local.X, LeafBox.Min.X, LeafBox.Max.X),
+		FMath::Clamp(Local.Y, LeafBox.Min.Y, LeafBox.Max.Y), FMath::Clamp(Local.Z, LeafBox.Min.Z, LeafBox.Max.Z)));
 }
 
 FText ARetakeDoor::GetPromptText() const
@@ -229,9 +245,11 @@ bool ARetakeDoor::GetClosedSeal(FBox& OutLeaf, int32& OutAxis) const
 bool ARetakeDoor::IsUsableFor(const APawn* Pawn) const
 {
 	if (!Pawn) return false;
-	const float Distance = FVector::Dist(Pawn->GetActorLocation(), GetInteractionLocation());
+	// The eyes, not the body: a pawn's eye view point includes its lean, so leaning toward a door reaches it.
+	FVector Eye; FRotator Rotation; Pawn->GetActorEyesViewPoint(Eye, Rotation);
+	const float Distance = FVector::Dist(Eye, GetClosestLeafPoint(Eye));
 	const bool bUsable = DoorState != ERetakeDoorState::Locked && !IsBroken() && Distance <= InteractionDistance;
-	DebugMessage(FString::Printf(TEXT("%s: %s, %.0f cm from leaf centre (limit %.0f) -> %s"), *GetActorNameOrLabel(),
+	DebugMessage(FString::Printf(TEXT("%s: %s, eyes %.0f cm from the leaf (limit %.0f) -> %s"), *GetActorNameOrLabel(),
 		DoorStateName(DoorState), Distance, InteractionDistance, bUsable ? TEXT("usable") : TEXT("not usable")), bUsable ? FColor::Green : FColor::Orange);
 	return bUsable;
 }

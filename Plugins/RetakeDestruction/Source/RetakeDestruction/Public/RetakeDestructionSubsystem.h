@@ -9,12 +9,23 @@
 
 class ARetakeDestructiblePlacement;
 class ARetakeDestructibleActor;
+class ARetakeStagedDestructible;
 class URetakeDestructionDefinition;
 class UNiagaraComponent;
 class UNiagaraSystem;
 class USoundBase;
 class USoundAttenuation;
 class USoundConcurrency;
+class URetakeStageImpactReceiver;
+struct FRetakeDestructibleExitEffect;
+
+/** Attack-local provenance set by native callers after admitting the attack. */
+enum class ERetakeDestructionDamageCause : uint8
+{
+    Normal,
+    ProjectileImpact,
+    GrenadeDetonation,
+};
 
 /** Native attack-local work, never populated from an RPC. All queries precede any mutation. */
 struct FRetakeDestructionHit
@@ -34,6 +45,10 @@ struct FRetakeDestructionHit
     float BreakRadius=0;
     /** Admitted whole-collection break, independent of authored strain thresholds. */
     bool bShatterCollection=false;
+    TWeakObjectPtr<ARetakeStagedDestructible> StagedActor;
+    int32 StagedPart=INDEX_NONE;
+    bool bMelee=false;
+    ERetakeDestructionDamageCause Cause=ERetakeDestructionDamageCause::Normal;
 };
 
 /**
@@ -47,6 +62,7 @@ class RETAKEDESTRUCTION_API URetakeDestructionSubsystem : public UWorldSubsystem
     GENERATED_BODY()
 public:
     DECLARE_MULTICAST_DELEGATE_ThreeParams(FDebrisSurfaceImpact,const URetakeDestructionDefinition& /*Definition*/,const FVector& /*Point*/,const FVector& /*Normal*/);
+    DECLARE_MULTICAST_DELEGATE_FourParams(FStagedBlast, ARetakeStagedDestructible&, int32 /*Part*/, int32 /*ExitStage*/, const FGuid& /*Owner*/);
     virtual bool DoesSupportWorldType(EWorldType::Type Type) const override;
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
@@ -57,8 +73,10 @@ public:
      * replication identity); an untouched one (ARetakeDestructibleActor::CanKeepForRound) is kept and joins the generation.
      */
     void ResetForRound();
-    bool HasDestructibles() const { return !Actors.IsEmpty(); }
-    void GatherPoint(const FHitResult& Hit,const FVector& Direction,float Damage,TArray<FRetakeDestructionHit>& Out,float StrainScale=1) const;
+    uint32 GetGeneration() const { return Generation; }
+    bool HasDestructibles() const { return !Actors.IsEmpty() || !StagedActors.IsEmpty(); }
+    void GatherPoint(const FHitResult& Hit,const FVector& Direction,float Damage,TArray<FRetakeDestructionHit>& Out,
+        float StrainScale=1,bool bMelee=false,ERetakeDestructionDamageCause Cause=ERetakeDestructionDamageCause::Normal) const;
     /** A grenade broke through at Hit: guarantees the opening, whatever the definition's thresholds. */
     void GatherBreak(const FHitResult& Hit,const FVector& Direction,TArray<FRetakeDestructionHit>& Out) const;
     /** Native admitted shatter: break the entire struck collection, preserving a separately authored frame. */
@@ -71,12 +89,14 @@ public:
      * (URetakeDestructionDefinition::IsBrokenByGrenade), such as a smoke or flash grenade's activation.
      */
     void GatherExplosion(const FVector& Origin,float Damage,float InnerRadius,float OuterRadius,ECollisionChannel CoverChannel,const AActor* Causer,
-        TArray<FRetakeDestructionHit>& Out,float FragileGrenadeDamage=0,uint8 QueryIgnoreMask=0) const;
+        TArray<FRetakeDestructionHit>& Out,float FragileGrenadeDamage=0,uint8 QueryIgnoreMask=0,float EdgeDamage=0.f,
+        ERetakeDestructionDamageCause Cause=ERetakeDestructionDamageCause::Normal) const;
     /**
      * Server: applies gathered hits of an attack the caller has admitted. DamageLimit caps each hit (the attack's direct or splash
      * limit) and scales splash strain. Hits on another round's actors, non-finite hits and a non-positive limit are skipped.
+     * Returns the summed damage the actors accepted (ApplyDamageAt); skipped and refused hits add nothing.
      */
-    void Commit(TConstArrayView<FRetakeDestructionHit> Hits,float DamageLimit,bool bSplash=false);
+    float Commit(TConstArrayView<FRetakeDestructionHit> Hits,float DamageLimit,bool bSplash=false,const FGuid& DamageOwner={});
     bool Occludes(const FBox& Eye,const FBox& Subject) const;
     /** Diagnostics: one line per destructible whose bounds meet the beam: its occlusion verdict/reason and piece state. */
     void DescribeOcclusion(const FBox& Eye,const FBox& Subject,TArray<FString>& Out) const;
@@ -87,23 +107,34 @@ public:
     /** Client-only persistent level effects (Chaos break/trailing data interface systems). */
     void EnsureWorldEffects(const URetakeDestructionDefinition* Definition);
     /** Client effect budget shared by every destructible cosmetic: 8 new effects per frame, 32 alive. Spawn only after it grants one,
-     *  then TrackEffect. A tracked effect still alive after MaxEffectSeconds is stopped, so no effect holds a slot forever. */
+     *  then TrackEffect. A tracked effect past its lifetime is stopped when the budget is refreshed. */
     bool AcquireEffectBudget();
-    void TrackEffect(UNiagaraComponent* Effect);
+    /** A positive authored lifetime overrides the default within the supported bounds. */
+    void TrackEffect(UNiagaraComponent* Effect, float MaximumLifetimeSeconds = 0.f);
+    /** Bind an optional impact callback before activating the parent Niagara component. */
+    bool BindStageImpactFires(ARetakeStagedDestructible& Owner, UNiagaraComponent& Parent, const FRetakeDestructibleExitEffect& Exit);
+    void ClearStageImpactFires(const ARetakeStagedDestructible& Owner);
     bool AcquireSoundBudget();
     USoundAttenuation* GetSoundAttenuation(const USoundBase* Sound);
     USoundConcurrency* GetCollisionSoundConcurrency();
     /** Client: a shot struck a loose shard of a definition that does not silence surface impacts. */
     FDebrisSurfaceImpact OnDebrisSurfaceImpact;
+    /** Authority only. The game schedules damage on its gameplay clock after stage changes finish. */
+    FStagedBlast OnStagedBlast;
     /** Concealing or blocking structure changed: a destructible appeared, broke, released pieces, cleared or reset. */
     FSimpleMulticastDelegate OnStructureChanged;
 private:
+    friend class URetakeStageImpactReceiver;
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<URetakeStageImpactReceiver>> StageImpactReceivers;
     UPROPERTY(Transient) TObjectPtr<USoundAttenuation> DefaultSoundAttenuation;
     UPROPERTY(Transient) TObjectPtr<USoundConcurrency> CollisionSoundConcurrency;
     UPROPERTY(Transient) TMap<TObjectPtr<UNiagaraSystem>,TObjectPtr<UNiagaraComponent>> WorldEffects;
     TMap<TWeakObjectPtr<ARetakeDestructiblePlacement>,TWeakObjectPtr<ARetakeDestructibleActor>> Placements;
     TSet<TWeakObjectPtr<ARetakeDestructibleActor>> Actors;
     FRetakeMapElementObservation Observation;
+    TSet<TWeakObjectPtr<ARetakeStagedDestructible>> StagedActors;
+    FRetakeMapElementObservation StagedObservation;
     uint32 Generation=1;
     uint64 BudgetFrame=MAX_uint64;
     int32 EffectsThisFrame=0,SoundsThisFrame=0;

@@ -45,14 +45,17 @@ private:
     {
         FIntVector Source, Listener;
         int32 SourceRegion = INDEX_NONE, ListenerRegion = INDEX_NONE;
-        float Range = 0, Radius = 0, Exponent = 0;
+        float Range = 0, Radius = 0, Exponent = 0, ObstructionStrength = 1;
         FObjectKey SourceActor, ListenerActor;
+        TArray<float, TInlineAllocator<32>> FalloffPoints;
         bool operator==(const FCacheKey&) const = default;
         friend uint32 GetTypeHash(const FCacheKey& Key)
         {
             uint32 Hash = HashCombineFast(GetTypeHash(Key.Source), GetTypeHash(Key.Listener));
             Hash = HashCombineFast(Hash, HashCombineFast(GetTypeHash(Key.SourceRegion), GetTypeHash(Key.ListenerRegion)));
             Hash = HashCombineFast(Hash, HashCombineFast(GetTypeHash(Key.Range), HashCombineFast(GetTypeHash(Key.Radius), GetTypeHash(Key.Exponent))));
+            Hash = HashCombineFast(Hash, GetTypeHash(Key.ObstructionStrength));
+            for (float Value : Key.FalloffPoints) Hash = HashCombineFast(Hash, GetTypeHash(Value));
             return HashCombineFast(Hash, HashCombineFast(GetTypeHash(Key.SourceActor), GetTypeHash(Key.ListenerActor)));
         }
     };

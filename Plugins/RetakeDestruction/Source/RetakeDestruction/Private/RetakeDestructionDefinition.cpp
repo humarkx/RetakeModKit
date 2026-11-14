@@ -422,6 +422,11 @@ FString URetakeDestructionDefinition::GetRemovalSummary() const
 }
 
 #if WITH_EDITOR
+FString URetakeDestructionDefinition::GetEffectLifeCycleError(const UNiagaraSystem& System)
+{
+    return NeverEndingReason(System);
+}
+
 EDataValidationResult URetakeDestructionDefinition::IsDataValid(FDataValidationContext& Context) const
 {
     const auto SuperResult=Super::IsDataValid(Context);
@@ -478,7 +483,7 @@ EDataValidationResult URetakeDestructionDefinition::IsDataValid(FDataValidationC
         {
             if (FPackageName::GetPackageMountPoint(BreakEffect->GetPackage()->GetName(),false)!=Root)
                 Fail(*FString::Printf(TEXT("Break Effect %s is outside this definition's package root %s."),*BreakEffect->GetPathName(),*Root.ToString()));
-            else if (const FString Endless=NeverEndingReason(*BreakEffect); !Endless.IsEmpty())
+            else if (const FString Endless=GetEffectLifeCycleError(*BreakEffect); !Endless.IsEmpty())
                 Fail(*FString::Printf(TEXT("Break Effect %s must end on its own: %s."),*BreakEffect->GetPathName(),*Endless));
         }
     }

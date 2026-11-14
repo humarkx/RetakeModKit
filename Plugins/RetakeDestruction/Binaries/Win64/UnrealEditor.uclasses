@@ -8,15 +8,26 @@
         "RetakeDestructibleTraversalComponent",
         "RetakeDestructionDefinition",
         "RetakeDestructionSubsystem",
-        "RetakeGeometryCollectionComponent"
+        "RetakeGeometryCollectionComponent",
+        "RetakeStageImpactReceiver",
+        "RetakeStagedDestructible",
+        "RetakeStagedDestructionDefinition"
       ],
       "Structs": [
+        "RetakeDestructibleExitBlast",
+        "RetakeDestructibleExitEffect",
+        "RetakeDestructiblePart",
+        "RetakeDestructibleRepeatEffect",
+        "RetakeDestructibleStage",
+        "RetakeDestructibleStageCue",
         "RetakeDestructionCoverCell",
         "RetakeDestructionOccluder",
         "RetakeDestructionPlaneCover",
         "RetakePieceMask"
       ],
-      "Enums": [],
+      "Enums": [
+        "ERetakeDestructibleDamageMode"
+      ],
       "Delegates": [],
       "ScriptNames": {}
     },

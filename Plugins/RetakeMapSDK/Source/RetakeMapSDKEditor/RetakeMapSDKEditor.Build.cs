@@ -11,6 +11,6 @@ public class RetakeMapSDKEditor : ModuleRules
             "AssetTools", "ContentBrowser", "ToolMenus", "Slate", "SlateCore", "InputCore", "DesktopPlatform", "LevelEditor", "ApplicationCore" });
         // Map presentation checks and the minimap bake: surface types of physical materials.
         PrivateDependencyModuleNames.AddRange(new[] { "PhysicsCore", "Niagara", "MovieScene", "MovieSceneTracks", "ControlRig" });
-        PrivateDependencyModuleNames.AddRange(new[] { "MeshDescription", "SkeletalMeshDescription", "RenderCore" });
+        PrivateDependencyModuleNames.AddRange(new[] { "MeshDescription", "SkeletalMeshDescription", "RenderCore", "ImageCore" });
     }
 }

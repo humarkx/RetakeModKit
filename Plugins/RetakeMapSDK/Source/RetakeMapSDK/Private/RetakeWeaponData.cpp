@@ -96,6 +96,19 @@ FRetakeWeaponGunKickSettings FRetakeWeaponGunKickSettings::WithImpulseScale(floa
     return Scaled;
 }
 
+bool FRetakeWeaponGunKickSettings::IsValid() const
+{
+    for (const float Value : {HipPitchMinDegreesPerSecond, HipPitchMaxDegreesPerSecond, HipYawMinDegreesPerSecond,
+        HipYawMaxDegreesPerSecond, AdsPitchMinDegreesPerSecond, AdsPitchMaxDegreesPerSecond, AdsYawMinDegreesPerSecond,
+        AdsYawMaxDegreesPerSecond})
+        if (!FMath::IsFinite(Value)) return false;
+    for (const float Value : {HipAccelerationDegreesPerSecondSquared, HipSpeedMaxDegreesPerSecond, HipSpeedDecayPerSecond,
+        HipStaticDecayDegreesPerSecondSquared, AdsAccelerationDegreesPerSecondSquared, AdsSpeedMaxDegreesPerSecond,
+        AdsSpeedDecayPerSecond, AdsStaticDecayDegreesPerSecondSquared})
+        if (!FMath::IsFinite(Value) || Value < 0) return false;
+    return FMath::IsFinite(MaxPitchDegrees) && MaxPitchDegrees >= 0 && MaxPitchDegrees <= 90
+        && FMath::IsFinite(MaxYawDegrees) && MaxYawDegrees >= 0 && MaxYawDegrees <= 90;
+}
 
 
 float FRetakeWeaponDamageSettings::MaximumMultiplier() const

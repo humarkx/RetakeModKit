@@ -205,12 +205,33 @@ bool URetakeWeaponSpecification::ValidateSpecification(TArray<FText>& OutErrors)
     V.Require(StaticEnum<ERetakeReloadPolicy>()->IsValidEnumValue(static_cast<int64>(Reload.Policy)), TEXT("Reload.Policy is invalid."));
     V.Nonnegative(Reload.CommitSeconds, TEXT("Reload.CommitSeconds"));
     V.Nonnegative(Reload.DurationSeconds, TEXT("Reload.DurationSeconds"));
+    V.Nonnegative(Reload.EmptyCommitSeconds, TEXT("Reload.EmptyCommitSeconds"));
+    V.Nonnegative(Reload.EmptyDurationSeconds, TEXT("Reload.EmptyDurationSeconds"));
+    V.Require(Reload.EmptyCommitSeconds<=Reload.EmptyDurationSeconds,
+        TEXT("Empty magazine ammo commit must not follow reload completion."));
+    V.Require(Reload.Policy==ERetakeReloadPolicy::Magazine
+        || (Reload.EmptyDurationSeconds==0.f && Presentation.EmptyReloadAnimation.IsNull()
+            && Presentation.FirstPersonEmptyReloadAnimation.IsNull()),
+        TEXT("Empty reload timing and clips require magazine reload."));
     V.Nonnegative(Reload.PerRoundStartSeconds, TEXT("Reload.PerRoundStartSeconds"));
     V.Nonnegative(Reload.PerRoundInsertSeconds, TEXT("Reload.PerRoundInsertSeconds"));
     V.Nonnegative(Reload.PerRoundEndSeconds, TEXT("Reload.PerRoundEndSeconds"));
     V.Nonnegative(Reload.PerRoundCommitLeadSeconds,TEXT("Reload.PerRoundCommitLeadSeconds"));
     V.Require(Reload.PerRoundCommitLeadSeconds<=Reload.PerRoundInsertSeconds,
         TEXT("Reload.PerRoundCommitLeadSeconds must not exceed the insertion duration."));
+    V.Require(Reload.HasValidPerRoundStartGrant(),
+        TEXT("Reload.PerRoundStartRounds requires a positive per-round opening duration and a commit time within that opening."));
+    V.Require(Rechamber.IsValid(),TEXT("Rechamber must be disabled or have an ejection from 1 ms through the end of its cycle."));
+    V.Require(!Rechamber.IsEnabled() || ((PrimaryAction.Type==ERetakeWeaponAction::Hitscan || PrimaryAction.Type==ERetakeWeaponAction::Pellets)
+        && PrimaryAction.AmmoCost>0 && MagazineCapacity>0),TEXT("Rechamber requires a primary firearm magazine."));
+    if (Rechamber.IsEnabled())
+    {
+        V.Reference(Presentation.RechamberAnimation.ToSoftObjectPath(),TEXT("Presentation.RechamberAnimation"),true);
+        V.Require(Presentation.RechamberSound.IsNull(),TEXT("A separate rechamber action cannot also use the firing-animation rechamber sound."));
+        if (const auto* Profile=Presentation.CharacterProfile.Get())
+            V.Require(Profile->FirstPersonRechamberMontage && (Presentation.AimedRechamberAnimation.IsNull()==!Profile->FirstPersonAimedRechamberMontage),
+                TEXT("Rechamber needs a first-person montage and matching aimed variants when authored."));
+    }
     if (Reload.Policy != ERetakeReloadPolicy::None)
         V.Require(bConsumesAmmo && MagazineCapacity > 0, TEXT("Reload requires a magazine and an explicit ammo definition."));
     if (Reload.Policy == ERetakeReloadPolicy::Magazine)
@@ -219,41 +240,81 @@ bool URetakeWeaponSpecification::ValidateSpecification(TArray<FText>& OutErrors)
         V.Require(Reload.CommitSeconds <= Reload.DurationSeconds, TEXT("Magazine ammo commit must not follow reload completion."));
     }
     if (Reload.Policy == ERetakeReloadPolicy::PerRound) V.Positive(Reload.PerRoundInsertSeconds, TEXT("Reload.PerRoundInsertSeconds"));
+    if (const auto* Profile=Presentation.CharacterProfile.Get(); Profile && Profile->bUseThirdPersonReloadMontageForPerRound
+        && Reload.Policy==ERetakeReloadPolicy::PerRound)
+    {
+        V.Require(Profile->ThirdPersonMontages.ReloadMontage && !Profile->bContinuousThirdPersonReloadStages
+            && Presentation.ThirdPersonReloadStart.IsNull() && Presentation.ThirdPersonReloadInsert.IsNull()
+            && Presentation.ThirdPersonReloadEnd.IsNull(),
+            TEXT("Action-wide per-round reloads require a third-person montage and no third-person stage clips."));
+    }
     if (ReloadAudio.bAuthored)
     {
         V.Require(Reload.Policy!=ERetakeReloadPolicy::None,TEXT("Authored reload audio needs a reload policy."));
-        V.Require(!ReloadAudio.Start.IsEmpty() || !ReloadAudio.Insert.IsEmpty() || !ReloadAudio.End.IsEmpty(),
-            TEXT("Authored reload audio requires at least one event."));
+        V.Require(ReloadAudio.HasEvents(),TEXT("Authored reload audio requires at least one event."));
         V.Require(Reload.Policy==ERetakeReloadPolicy::PerRound || (ReloadAudio.Insert.IsEmpty() && ReloadAudio.End.IsEmpty()),
             TEXT("Magazine reload audio uses the Start phase only."));
     }
-    for (int32 Stage=0;Stage<3;++Stage)
+    const bool bMagazine=Reload.Policy==ERetakeReloadPolicy::Magazine;
+    const bool bPerRound=Reload.Policy==ERetakeReloadPolicy::PerRound;
+    V.Require((ReloadAudio.EmptyStart.IsEmpty() && ReloadAudio.OwnerEmptyStart.IsEmpty()) || (ReloadAudio.bAuthored && bMagazine),
+        TEXT("Empty reload audio requires an authored magazine timeline."));
+    V.Require(!ReloadAudio.bUseDistinctOwnerTimelines || ReloadAudio.bAuthored,TEXT("Distinct owner timelines require authored reload audio."));
+    V.Require(ReloadAudio.OwnerStart.IsEmpty() || (ReloadAudio.bAuthored && (bMagazine || ReloadAudio.bUseDistinctOwnerTimelines)),
+        TEXT("A per-round owner opening requires distinct owner timelines."));
+    V.Require((ReloadAudio.OwnerInsert.IsEmpty() && ReloadAudio.OwnerEnd.IsEmpty())
+        || (bPerRound && ReloadAudio.bUseDistinctOwnerTimelines),
+        TEXT("Owner insert and closing events require distinct per-round timelines."));
+    auto ValidateTimeline=[&](TConstArrayView<FRetakeWeaponTimedAudioCue> Events,float Duration,bool bOwnerOnly,bool bCheckDuration)
     {
-        const auto Events=ReloadAudio.Events(Stage);
-        V.Require(Events.Num()<=FRetakeWeaponReloadAudio::MaximumEventsPerPhase,TEXT("Reload audio exceeds the per-phase event limit."));
-        const float Duration=Reload.Policy==ERetakeReloadPolicy::Magazine ? Reload.DurationSeconds
-            : Stage==0 ? Reload.PerRoundStartSeconds : Stage==1 ? Reload.PerRoundInsertSeconds:Reload.PerRoundEndSeconds;
+        V.Require(Events.Num()<=FRetakeWeaponReloadAudio::MaximumEventsPerPhase,TEXT("Weapon audio exceeds the per-phase event limit."));
         float Previous=-1.f;
         TArray<TPair<float,FSoftObjectPath>> Seen;
         for (const auto& Event:Events)
         {
-            V.Range(Event.Seconds,0.f,65.f,TEXT("Reload audio event time"));
-            V.Require(Event.Seconds>=Previous,TEXT("Reload audio events must be ordered by time."));Previous=Event.Seconds;
-            if (ReloadAudio.bAuthored) V.Require(Event.Seconds<=Duration,TEXT("Reload audio event follows its authored phase end."));
-            V.Reference(Event.Cue.ToSoftObjectPath(),TEXT("Reload audio cue"),true);
+            V.Range(Event.Seconds,0.f,65.f,TEXT("Weapon audio event time"));
+            V.Range(Event.PlaybackDelaySeconds,0.f,FRetakeWeaponTimedAudioCue::MaximumPlaybackDelaySeconds,TEXT("Weapon audio playback delay"));
+            V.Require(Event.Seconds>=Previous,TEXT("Weapon audio events must be ordered by time."));Previous=Event.Seconds;
+            if (bCheckDuration) V.Require(Event.Seconds<=Duration,TEXT("Weapon audio event follows its authored phase end."));
+            V.Reference(Event.Cue.ToSoftObjectPath(),TEXT("Weapon audio cue"),true);
             const auto Key=TPair<float,FSoftObjectPath>(Event.Seconds,Event.Cue.ToSoftObjectPath());
-            V.Require(!Seen.Contains(Key),TEXT("Reload audio repeats the same cue at the same phase time."));Seen.Add(Key);
+            V.Require(!Seen.Contains(Key),TEXT("Weapon audio repeats the same cue at the same phase time."));Seen.Add(Key);
             if (const auto* Cue=Event.Cue.Get())
             {
-                FString Error;V.Require(Cue->Validate(Error),TEXT("Reload audio: ")+Error);
-                V.Require(Cue->bSpatial && !Cue->bLooping && Cue->Category==ERetakeAudioCategory::Gameplay && Cue->Generator.IsNull(),
-                    TEXT("Timed reload audio requires a positional Gameplay recording cue without a generator."));
+                FString Error;V.Require(Cue->Validate(Error),TEXT("Weapon audio: ")+Error);
+                V.Require((bOwnerOnly || Cue->bSpatial) && !Cue->bLooping
+                    && Cue->Category==ERetakeAudioCategory::Gameplay && Cue->Generator.IsNull(),
+                    TEXT("Timed weapon audio requires a nonlooping Gameplay recording cue. Remote cues must be positional."));
             }
         }
-    }
+    };
+    const float EmptyDuration=Reload.MagazineDuration(true);
+    const float SharedDuration=FMath::Min(Reload.DurationSeconds,EmptyDuration);
+    ValidateTimeline(ReloadAudio.Start,bMagazine
+        ? (ReloadAudio.EmptyStart.IsEmpty() ? SharedDuration:Reload.DurationSeconds) : Reload.PerRoundStartSeconds,false,ReloadAudio.bAuthored);
+    ValidateTimeline(ReloadAudio.Insert,bMagazine ? Reload.DurationSeconds:Reload.PerRoundInsertSeconds,false,ReloadAudio.bAuthored);
+    ValidateTimeline(ReloadAudio.End,bMagazine ? Reload.DurationSeconds:Reload.PerRoundEndSeconds,false,ReloadAudio.bAuthored);
+    ValidateTimeline(ReloadAudio.EmptyStart,EmptyDuration,false,ReloadAudio.bAuthored);
+    const float OwnerStartDuration=bMagazine
+        ? (ReloadAudio.bUseDistinctOwnerTimelines || !ReloadAudio.OwnerEmptyStart.IsEmpty() ? Reload.DurationSeconds : SharedDuration)
+        : Reload.PerRoundStartSeconds;
+    ValidateTimeline(ReloadAudio.OwnerStart,OwnerStartDuration,true,ReloadAudio.bAuthored);
+    ValidateTimeline(ReloadAudio.OwnerEmptyStart,EmptyDuration,true,ReloadAudio.bAuthored);
+    ValidateTimeline(ReloadAudio.OwnerInsert,Reload.PerRoundInsertSeconds,true,ReloadAudio.bAuthored);
+    ValidateTimeline(ReloadAudio.OwnerEnd,Reload.PerRoundEndSeconds,true,ReloadAudio.bAuthored);
+    V.Require(Rechamber.IsEnabled() || (RechamberOwnerAudio.IsEmpty() && RechamberWorldAudio.IsEmpty()),
+        TEXT("Rechamber audio requires a separate rechamber action."));
+    ValidateTimeline(RechamberOwnerAudio,Rechamber.DurationSeconds,true,true);
+    ValidateTimeline(RechamberWorldAudio,Rechamber.DurationSeconds,false,true);
     V.Nonnegative(Equip.AttachSeconds, TEXT("Equip.AttachSeconds"));
     V.Nonnegative(Equip.DurationSeconds, TEXT("Equip.DurationSeconds"));
     V.Require(Equip.AttachSeconds <= Equip.DurationSeconds, TEXT("Equipment attachment must not follow equip completion."));
+    V.Range(Equip.FirstDurationSeconds,0.f,65.f,TEXT("Equip.FirstDurationSeconds"));
+    V.Require(Equip.FirstDurationSeconds==0.f || Equip.FirstDurationSeconds>Equip.AttachSeconds,
+        TEXT("An authored first draw must finish after the attachment."));
+    V.Require(Equip.FirstDurationSeconds>0.f || (Presentation.FirstEquipAudio.IsEmpty() && Presentation.FirstPersonFirstEquipAnimation.IsNull()),
+        TEXT("First-equip presentation requires authored first-equip timing."));
+    ValidateTimeline(Presentation.FirstEquipAudio,Equip.FirstDurationSeconds-Equip.AttachSeconds,true,true);
     V.Nonnegative(Holster.DurationSeconds,TEXT("Holster.DurationSeconds"));
     V.Nonnegative(Holster.CommitSeconds,TEXT("Holster.CommitSeconds"));
     V.Require(Holster.CommitSeconds<=Holster.DurationSeconds,TEXT("Holster commit must not follow completion."));
@@ -261,6 +322,7 @@ bool URetakeWeaponSpecification::ValidateSpecification(TArray<FText>& OutErrors)
     V.Nonnegative(Drop.CommitSeconds,TEXT("Drop.CommitSeconds"));
     V.Require(Drop.CommitSeconds<=Drop.DurationSeconds,TEXT("Drop commit must not follow completion."));
     V.Require(StaticEnum<ERetakeViewKickMode>()->IsValidEnumValue(static_cast<int64>(ViewKick.Mode)), TEXT("ViewKick.Mode is invalid."));
+    V.Require(GunKick.IsValid(), TEXT("GunKick requires finite endpoints, nonnegative recovery and angle caps in [0,90]."));
     V.Range(ViewKick.PitchMinDegrees, -180, 180, TEXT("ViewKick.PitchMinDegrees"));
     V.Range(ViewKick.PitchMaxDegrees, ViewKick.PitchMinDegrees, 180, TEXT("ViewKick.PitchMaxDegrees"));
     V.Range(ViewKick.YawMinDegrees, -180, 180, TEXT("ViewKick.YawMinDegrees"));
@@ -335,6 +397,15 @@ bool URetakeWeaponSpecification::ValidateSpecification(TArray<FText>& OutErrors)
         CheckSet(Presentation.FirstPersonGrenade,TEXT("Presentation.FirstPersonGrenade"));
         CheckSet(Presentation.ThirdPersonGrenade,TEXT("Presentation.ThirdPersonGrenade"));
         CheckSet(Presentation.WeaponGrenade,TEXT("Presentation.WeaponGrenade"));
+        TSet<ERetakeGrenadeBodyPose> BodyPoses;
+        for (const auto& Variant:Presentation.ThirdPersonGrenadeBodyAnimations)
+        {
+            V.Require(uint8(Variant.Pose)<uint8(ERetakeGrenadeBodyPose::Count) && !BodyPoses.Contains(Variant.Pose),
+                TEXT("ThirdPersonGrenadeBodyAnimations needs one entry per supported body pose."));
+            BodyPoses.Add(Variant.Pose);
+            V.Reference(Variant.Long.ToSoftObjectPath(),TEXT("ThirdPersonGrenadeBodyAnimations.Long"),true);
+            V.Reference(Variant.Short.ToSoftObjectPath(),TEXT("ThirdPersonGrenadeBodyAnimations.Short"),false);
+        }
         if (Grenade.Effect==ERetakeGrenadeEffect::Smoke)
         {
             V.Reference(Presentation.SmokeEffect.ToSoftObjectPath(),TEXT("Presentation.SmokeEffect"),true);
@@ -354,6 +425,8 @@ bool URetakeWeaponSpecification::ValidateSpecification(TArray<FText>& OutErrors)
         V.Require(Grenade.Effect==ERetakeGrenadeEffect::Explosion || (Projectile.ExplosionDamage==0 && Projectile.ExplosionMinDamage==0),
             TEXT("Only explosive grenades deal blast damage."));
     }
+    V.Require(bGrenade || Presentation.ThirdPersonGrenadeBodyAnimations.IsEmpty(),
+        TEXT("Third-person grenade body animations require a grenade action."));
     if (const auto* Timer=Presentation.CookTimerCue.Get())
         V.Require(Timer->Recordings.Num()==1 && Timer->PitchVariationSemitones==0.f
             && Timer->Recordings[0].PitchMinimum==1.f && Timer->Recordings[0].PitchMaximum==1.f,
@@ -377,15 +450,23 @@ void URetakeWeaponSpecification::GetReferencedSoftPaths(TArray<FSoftObjectPath>&
     Add(P.IdleAnimation.ToSoftObjectPath()); // The gameplay muzzle uses the authored idle bone pose on the server too.
     const auto AddGrenade=[&Add](const FRetakeGrenadeAnimationSet& G){Add(G.PrepareLong.ToSoftObjectPath());Add(G.PrepareShort.ToSoftObjectPath());Add(G.ReleaseLong.ToSoftObjectPath());Add(G.ReleaseShort.ToSoftObjectPath());};
     AddGrenade(P.ThirdPersonGrenade);
+    for (const auto& Variant:P.ThirdPersonGrenadeBodyAnimations)
+    {
+        Add(Variant.Long.ToSoftObjectPath());
+        Add(Variant.Short.ToSoftObjectPath());
+    }
     // Cue definitions are metadata only; their recording soft references do not load on the server.
-    Add(P.PrimaryFireCue.ToSoftObjectPath()); Add(P.SecondaryFireCue.ToSoftObjectPath());
+    Add(P.PrimaryFireCue.ToSoftObjectPath()); Add(P.OwnerPrimaryFireCue.ToSoftObjectPath()); Add(P.SecondaryFireCue.ToSoftObjectPath());
     Add(P.ReloadCue.ToSoftObjectPath()); Add(P.ReloadInsertCue.ToSoftObjectPath()); Add(P.ReloadEndCue.ToSoftObjectPath());
     Add(P.EquipCue.ToSoftObjectPath()); Add(P.HolsterCue.ToSoftObjectPath()); Add(P.ThrowCue.ToSoftObjectPath()); Add(P.PinCue.ToSoftObjectPath());
     Add(P.CookTimerCue.ToSoftObjectPath());
     Add(P.ExplosionCue.ToSoftObjectPath()); Add(P.Attenuation.ToSoftObjectPath()); Add(P.DryFireCue.ToSoftObjectPath());
     Add(P.FireSelectorCue.ToSoftObjectPath());
     if (ReloadAudio.bAuthored)
-        for (int32 Stage=0;Stage<3;++Stage) for (const auto& Event:ReloadAudio.Events(Stage)) Add(Event.Cue.ToSoftObjectPath());
+        ReloadAudio.ForEachEvent([&](const auto& Event){Add(Event.Cue.ToSoftObjectPath());});
+    for (const auto* Events:{&RechamberWorldAudio,&RechamberOwnerAudio})
+        for (const auto& Event:*Events) Add(Event.Cue.ToSoftObjectPath());
+    for (const auto& Event:P.FirstEquipAudio) Add(Event.Cue.ToSoftObjectPath());
     if (Equipment.IsEnabled()) Add(Equipment.UseCue.ToSoftObjectPath());
     if (bServer) return;
     Add(P.BashProp.Mesh.ToSoftObjectPath());
@@ -399,12 +480,17 @@ void URetakeWeaponSpecification::GetReferencedSoftPaths(TArray<FSoftObjectPath>&
     { Add(Variant.FirstPersonAnimation.ToSoftObjectPath()); Add(Variant.ThirdPersonAnimation.ToSoftObjectPath()); }
     ADD_PRESENTATION_REF(FirstPersonReloadStart); ADD_PRESENTATION_REF(FirstPersonReloadInsert); ADD_PRESENTATION_REF(FirstPersonReloadEnd);
     ADD_PRESENTATION_REF(ThirdPersonReloadStart); ADD_PRESENTATION_REF(ThirdPersonReloadInsert); ADD_PRESENTATION_REF(ThirdPersonReloadEnd);
-    ADD_PRESENTATION_REF(ReloadInsertCue); ADD_PRESENTATION_REF(ReloadEndCue); ADD_PRESENTATION_REF(ShellEjectEffect); ADD_PRESENTATION_REF(ShellEjectMesh);
+    ADD_PRESENTATION_REF(ReloadInsertCue); ADD_PRESENTATION_REF(ReloadEndCue); ADD_PRESENTATION_REF(ShellEjectEffect);
+    ADD_PRESENTATION_REF(FirstPersonShellEjectEffect); ADD_PRESENTATION_REF(ShellEjectMesh);
     ADD_PRESENTATION_REF(ProjectileMesh);
     ADD_PRESENTATION_REF(ProjectileStaticMesh);
     ADD_PRESENTATION_REF(FireAnimation); ADD_PRESENTATION_REF(ReloadAnimation); ADD_PRESENTATION_REF(FirstPersonReloadAnimation);
-    ADD_PRESENTATION_REF(PrimaryFireCue); ADD_PRESENTATION_REF(SecondaryFireCue); ADD_PRESENTATION_REF(DryFireCue); ADD_PRESENTATION_REF(FireSelectorCue);
+    ADD_PRESENTATION_REF(EmptyReloadAnimation); ADD_PRESENTATION_REF(FirstPersonEmptyReloadAnimation);
+    ADD_PRESENTATION_REF(FirstPersonFirstEquipAnimation);
+    ADD_PRESENTATION_REF(PrimaryFireCue); ADD_PRESENTATION_REF(OwnerPrimaryFireCue);
+    ADD_PRESENTATION_REF(SecondaryFireCue); ADD_PRESENTATION_REF(DryFireCue); ADD_PRESENTATION_REF(FireSelectorCue);
     ADD_PRESENTATION_REF(RechamberSound); ADD_PRESENTATION_REF(RechamberAttenuation);
+    ADD_PRESENTATION_REF(RechamberAnimation); ADD_PRESENTATION_REF(AimedRechamberAnimation);
     ADD_PRESENTATION_REF(ReloadCue); ADD_PRESENTATION_REF(EquipCue); ADD_PRESENTATION_REF(HolsterCue); ADD_PRESENTATION_REF(PinCue);
     ADD_PRESENTATION_REF(ThrowCue); ADD_PRESENTATION_REF(CookTimerCue); ADD_PRESENTATION_REF(ExplosionCue);
     ADD_PRESENTATION_REF(Attenuation); ADD_PRESENTATION_REF(Concurrency);
